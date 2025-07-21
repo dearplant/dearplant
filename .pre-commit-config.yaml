@@ -1,0 +1,315 @@
+# 📄 File: .pre-commit-config.yaml
+#
+# 🧭 Purpose (Layman Explanation):
+# Automatic code quality checks that run before each Git commit to ensure
+# our code follows standards and catches problems early.
+#
+# 🧪 Purpose (Technical Summary):
+# Pre-commit hook configuration for automated code formatting, linting,
+# security checks, and quality assurance before commits reach the repository.
+#
+# 🔗 Dependencies:
+# - pre-commit Python package
+# - Git hooks system
+# - Python development tools (black, isort, mypy, etc.)
+#
+# 🔄 Connected Modules / Calls From:
+# - Git commit workflow
+# - Developer environment setup
+# - CI/CD pipeline quality gates
+
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+
+repos:
+  # ==========================================================================
+  # SECRETS AND SENSITIVE DATA DETECTION
+  # ==========================================================================
+  # detect-secrets - Find secrets in code
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+            \.env\.example$|
+            \.secrets\.baseline$|
+            tests/fixtures/.*\.json$|
+            docs/.*\.md$
+          )
+
+  # ==========================================================================
+  # DATABASE & MIGRATIONS
+  # ==========================================================================
+  # SQL formatting (for raw SQL files)
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 3.0.3
+    hooks:
+      - id: sqlfluff-lint
+        files: \.sql$
+        args: [--dialect, postgres]
+      - id: sqlfluff-fix
+        files: \.sql$
+        args: [--dialect, postgres]
+
+  # ==========================================================================
+  # DOCKER & CONTAINERS
+  # ==========================================================================
+  # Dockerfile linting
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
+        args: [--ignore, DL3008, --ignore, DL3009]  # Allow apt without version pinning in dev
+
+  # ==========================================================================
+  # YAML & CONFIGURATION FILES
+  # ==========================================================================
+  # YAML linting
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: [--format, parsable, --strict]
+        files: \.(yaml|yml)$
+
+  # ==========================================================================
+  # DOCUMENTATION CHECKS
+  # ==========================================================================
+  # Markdown linting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.39.0
+    hooks:
+      - id: markdownlint
+        args: [--fix]
+        files: \.md$
+
+  # ==========================================================================
+  # COMMIT MESSAGE VALIDATION
+  # ==========================================================================
+  # Conventional commit format
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v3.21.3
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+
+  # ==========================================================================
+  # PLANT CARE SPECIFIC CHECKS
+  # ==========================================================================
+  # Custom hooks for Plant Care application
+  - repo: local
+    hooks:
+      # Check for TODO/FIXME comments in production code
+      - id: check-todos
+        name: Check for TODO/FIXME comments
+        entry: grep -r --include="*.py" -E "(TODO|FIXME|XXX|HACK)" app/
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [commit]
+        verbose: true
+        
+      # Validate environment variables in .env.example
+      - id: validate-env-example
+        name: Validate .env.example format
+        entry: python scripts/validate_env_example.py
+        language: python
+        files: ^\.env\.example$
+        pass_filenames: true
+        
+      # Check migration file naming convention
+      - id: check-migration-naming
+        name: Check migration file naming
+        entry: python scripts/check_migration_naming.py
+        language: python
+        files: ^migrations/versions/.*\.py$
+        pass_filenames: true
+        
+      # Validate API schema consistency
+      - id: validate-api-schemas
+        name: Validate API schema consistency
+        entry: python scripts/validate_api_schemas.py
+        language: python
+        files: ^app/modules/.*/presentation/api/.*\.py$
+        pass_filenames: false
+        
+      # Check for hardcoded configuration values
+      - id: check-hardcoded-config
+        name: Check for hardcoded configuration
+        entry: python scripts/check_hardcoded_config.py
+        language: python
+        files: ^app/.*\.py$
+        pass_filenames: true
+        
+      # Validate module structure compliance
+      - id: validate-module-structure
+        name: Validate module structure
+        entry: python scripts/validate_module_structure.py
+        language: python
+        files: ^app/modules/.*\.py$
+        pass_filenames: false
+        always_run: true
+
+# =============================================================================
+# CI CONFIGURATION
+# =============================================================================
+ci:
+  # Frequency of pre-commit.ci updates
+  autoupdate_schedule: weekly
+  
+  # Skip these hooks in CI (they run in separate CI jobs)
+  skip: [
+    mypy,           # Run in separate CI job for better caching
+    safety,         # Run in security-focused CI job
+    hadolint-docker # Run in docker-specific CI job
+  ]
+  
+  # Automatically fix issues where possible
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit.com hooks
+    
+    for more information, see https://pre-commit.ci
+
+# =============================================================================
+# DEFAULT LANGUAGE VERSIONS
+# =============================================================================
+default_language_version:
+  python: python3.11
+  node: "18"
+
+# =============================================================================
+# REPOSITORY CONFIGURATION
+# =============================================================================
+default_stages: [commit, push]
+minimum_pre_commit_version: "3.0.0"
+
+# Files to exclude from all hooks
+exclude: |
+  (?x)^(
+    migrations/versions/.*\.py$|         # Auto-generated migration files
+    .*\.min\.js$|                        # Minified JavaScript files
+    .*\.min\.css$|                       # Minified CSS files
+    node_modules/.*|                     # Node.js dependencies
+    \.git/.*|                            # Git internal files
+    \.venv/.*|                           # Virtual environment
+    venv/.*|                             # Virtual environment
+    build/.*|                            # Build artifacts
+    dist/.*|                             # Distribution files
+    \.egg-info/.*|                       # Python package metadata
+    __pycache__/.*|                      # Python cache files
+    \.pytest_cache/.*|                   # Pytest cache
+    htmlcov/.*|                          # Coverage HTML reports
+    \.coverage.*|                        # Coverage data files
+    \.mypy_cache/.*|                     # MyPy cache
+    tests/fixtures/.*\.json$|            # Test fixture files
+    docs/.*\.generated\..*$              # Generated documentation
+  )
+  # GENERAL FILE CHECKS
+  # ==========================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      # File formatting and cleanup
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      
+      # File validation
+      - id: check-yaml
+        args: [--unsafe]  # Allow custom YAML tags
+      - id: check-toml
+      - id: check-json
+      - id: check-xml
+      
+      # Security and sensitive data
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: [--maxkb=1000]  # Limit files to 1MB
+      - id: check-merge-conflict
+      
+      # Python-specific checks
+      - id: check-ast  # Check Python syntax
+      - id: check-builtin-literals
+      - id: check-docstring-first
+      - id: debug-statements  # Remove pdb, ipdb, etc.
+      - id: name-tests-test
+        args: [--pytest-test-first]
+      
+      # General validation
+      - id: check-case-conflict  # Case-insensitive filesystem issues
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+
+  # ==========================================================================
+  # PYTHON CODE FORMATTING
+  # ==========================================================================
+  # Black - Code formatter
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+        args: [--line-length=100]
+        language_version: python3.11
+        files: ^app/.*\.py$|^tests/.*\.py$|^scripts/.*\.py$
+
+  # isort - Import sorter
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: [--profile=black, --line-length=100]
+        files: ^app/.*\.py$|^tests/.*\.py$|^scripts/.*\.py$
+
+  # ==========================================================================
+  # PYTHON LINTING & QUALITY CHECKS
+  # ==========================================================================
+  # Ruff - Fast Python linter (replaces flake8, pycodestyle, etc.)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.3.4
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        files: ^app/.*\.py$|^tests/.*\.py$|^scripts/.*\.py$
+
+  # mypy - Static type checker
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.9.0
+    hooks:
+      - id: mypy
+        files: ^app/.*\.py$
+        args: [--config-file=pyproject.toml]
+        additional_dependencies: [
+          pydantic,
+          sqlalchemy[mypy],
+          types-redis,
+          types-requests,
+          types-python-dateutil,
+          types-pytz
+        ]
+        exclude: ^(tests/|migrations/|scripts/)
+
+  # ==========================================================================
+  # SECURITY CHECKS
+  # ==========================================================================
+  # Bandit - Security linter
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.8
+    hooks:
+      - id: bandit
+        args: [-c, pyproject.toml]
+        files: ^app/.*\.py$
+        exclude: ^tests/
+
+  # Safety - Check dependencies for known security vulnerabilities
+  - repo: https://github.com/Lucas-C/pre-commit-hooks-safety
+    rev: v1.3.2
+    hooks:
+      - id: python-safety-dependencies-check
+        files: requirements.*\.txt$
+        args: [--ignore=51668]  # Ignore specific vulnerabilities if needed
+
+  # ==========================================================================

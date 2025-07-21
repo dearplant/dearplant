@@ -1,0 +1,358 @@
+# 📄 File: pyproject.toml
+#
+# 🧭 Purpose (Layman Explanation):
+# Configuration file that tells Python how to package and manage our Plant Care app,
+# like a recipe book that explains how to organize and prepare the code.
+#
+# 🧪 Purpose (Technical Summary):
+# Modern Python project configuration using PEP 621 standards for package metadata,
+# build system configuration, and tool settings for linting, formatting, and testing.
+#
+# 🔗 Dependencies:
+# - Python 3.11+
+# - setuptools/build system
+# - Development tools (black, isort, mypy, pytest)
+#
+# 🔄 Connected Modules / Calls From:
+# - pip install commands
+# - Build and packaging tools
+# - CI/CD pipelines
+# - Development tool configurations
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plant-care-backend"
+version = "1.0.0"
+description = "AI-Powered Plant Care Management System - Backend API"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Plant Care Team", email = "dev@plantcare.app"}
+]
+maintainers = [
+    {name = "Plant Care Team", email = "dev@plantcare.app"}
+]
+keywords = [
+    "plant-care",
+    "ai",
+    "fastapi",
+    "agriculture",
+    "plant-identification",
+    "iot",
+    "mobile-app"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Scientific/Engineering :: Agriculture",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: FastAPI",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.11"
+
+dependencies = [
+    "fastapi>=0.111.3",
+    "uvicorn[standard]>=0.29.0",
+    "sqlalchemy[asyncio]>=2.0.28",
+    "alembic>=1.13.1",
+    "asyncpg>=0.29.0",
+    "pydantic>=2.6.3",
+    "pydantic-settings>=2.2.1",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "supabase>=2.4.0",
+    "redis[hiredis]>=5.0.3",
+    "celery>=5.3.6",
+    "httpx>=0.27.0",
+    "pillow>=10.2.0",
+    "structlog>=24.1.0",
+    "slowapi>=0.1.9",
+    "python-dotenv>=1.0.1",
+    "pytz>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.1.1",
+    "pytest-asyncio>=0.23.5",
+    "pytest-mock>=3.12.0",
+    "pytest-cov>=4.0.0",
+    "httpx-mock>=0.14.0",
+    "black>=24.3.0",
+    "isort>=5.13.2",
+    "flake8>=7.0.0",
+    "mypy>=1.9.0",
+    "pre-commit>=3.7.0",
+    "rich>=13.7.1",
+]
+ai = [
+    "openai>=1.13.3",
+    "anthropic>=0.21.3",
+    "google-generativeai>=0.4.1",
+]
+payments = [
+    "razorpay>=1.4.2",
+    "stripe>=8.11.0",
+]
+communication = [
+    "twilio>=9.0.4",
+    "sendgrid>=6.11.0",
+]
+analytics = [
+    "pandas>=2.2.1",
+    "numpy>=1.26.4",
+]
+docs = [
+    "mkdocs>=1.5.3",
+    "mkdocs-material>=9.5.13",
+]
+all = [
+    "plant-care-backend[dev,ai,payments,communication,analytics,docs]"
+]
+
+[project.urls]
+Homepage = "https://plantcare.app"
+Documentation = "https://docs.plantcare.app"
+Repository = "https://github.com/plantcare/backend"
+"Bug Tracker" = "https://github.com/plantcare/backend/issues"
+Changelog = "https://github.com/plantcare/backend/blob/main/CHANGELOG.md"
+
+[project.scripts]
+plant-care = "app.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["tests*", "docs*", "scripts*"]
+
+[tool.setuptools.package-data]
+app = [
+    "config/**/*.yaml",
+    "config/**/*.yml",
+    "config/**/*.json",
+    "migrations/**/*.py",
+    "migrations/**/*.mako",
+]
+
+# =============================================================================
+# BLACK CODE FORMATTER
+# =============================================================================
+[tool.black]
+line-length = 100
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | migrations/versions
+)/
+'''
+
+# =============================================================================
+# ISORT IMPORT SORTER
+# =============================================================================
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 100
+known_first_party = ["app", "tests"]
+known_third_party = [
+    "fastapi",
+    "sqlalchemy", 
+    "pydantic",
+    "redis",
+    "celery",
+    "supabase",
+    "alembic"
+]
+sections = [
+    "FUTURE",
+    "STDLIB", 
+    "THIRDPARTY",
+    "FIRSTPARTY",
+    "LOCALFOLDER"
+]
+skip_glob = ["migrations/versions/*.py"]
+
+# =============================================================================
+# MYPY TYPE CHECKER
+# =============================================================================
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+show_error_codes = true
+
+# Per-module options
+[[tool.mypy.overrides]]
+module = [
+    "tests.*",
+    "migrations.*",
+    "supabase.*",
+    "redis.*",
+    "celery.*",
+    "passlib.*",
+    "jose.*",
+]
+ignore_missing_imports = true
+
+# =============================================================================
+# PYTEST CONFIGURATION
+# =============================================================================
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=app",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+    "--cov-fail-under=80"
+]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_functions = ["test_*"]
+python_classes = ["Test*"]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests", 
+    "e2e: End-to-end tests",
+    "slow: Slow running tests",
+    "external_api: Tests that call external APIs",
+    "database: Tests that require database",
+    "redis: Tests that require Redis",
+]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+# =============================================================================
+# COVERAGE CONFIGURATION
+# =============================================================================
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "app/tests/*",
+    "app/migrations/*", 
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "app/main.py",  # Entry point
+]
+branch = true
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError", 
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+# =============================================================================
+# BANDIT SECURITY LINTER
+# =============================================================================
+[tool.bandit]
+exclude_dirs = ["tests", "migrations"]
+skips = ["B101", "B601"]  # Skip assert_used and shell_injection in tests
+
+# =============================================================================
+# RUFF LINTER (ALTERNATIVE TO FLAKE8)
+# =============================================================================
+[tool.ruff]
+# Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default.
+select = ["E", "F", "W", "C90", "I", "N", "UP", "YTT", "S", "BLE", "FBT", "B", "A", "COM", "C4", "DTZ", "T10", "DJ", "EM", "EXE", "ISC", "ICN", "G", "INP", "PIE", "T20", "PYI", "PT", "Q", "RSE", "RET", "SLF", "SIM", "TID", "TCH", "INT", "ARG", "PTH", "ERA", "PD", "PGH", "PL", "TRY", "NPY", "RUF"]
+ignore = ["E501", "S101", "S104", "COM812", "ISC001"]
+
+# Same as Black.
+line-length = 100
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+target-version = "py311"
+
+exclude = [
+    ".bzr",
+    ".direnv", 
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+    "migrations",
+]
+
+[tool.ruff.mccabe]
+max-complexity = 10
+
+[tool.ruff.per-file-ignores]
+"tests/*" = ["S101", "PLR2004", "S106"]
+"migrations/*" = ["ALL"]
+"app/main.py" = ["T201"]  # Allow prints in main
+
+# =============================================================================
+# COMMITIZEN CONFIGURATION
+# =============================================================================
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "1.0.0"
+tag_format = "v$version"
+version_files = [
+    "pyproject.toml:version",
+    "app/__init__.py:__version__",
+]

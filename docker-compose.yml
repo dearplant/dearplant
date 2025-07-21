@@ -1,0 +1,125 @@
+# 📄 File: docker-compose.yml
+#
+# 🧭 Purpose (Layman Explanation):
+# Blueprint for setting up all the different services our Plant Care app needs
+# (database, cache, background workers) so they can all work together locally.
+#
+# 🧪 Purpose (Technical Summary):
+# Docker Compose configuration for development environment with all required services:
+# FastAPI app, PostgreSQL, Redis, Celery workers, and monitoring tools.
+#
+# 🔗 Dependencies:
+# - Docker Engine 20.10+
+# - Docker Compose V2
+# - .env file with configuration
+#
+# 🔄 Connected Modules / Calls From:
+# - Development environment setup
+# - Local testing workflows
+# - CI/CD pipeline development stage
+
+version: '3.8'
+
+# =============================================================================
+# SERVICES CONFIGURATION
+# =============================================================================
+services:
+  
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database Service
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:15.6-alpine
+    container_name: plantcare_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: plantcare_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-plantcare_dev_password}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    networks:
+      - plantcare_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d plantcare_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Redis Cache & Session Store
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7.2-alpine
+    container_name: plantcare_redis
+    restart: unless-stopped
+    command: >
+      redis-server 
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1 300 10 60 10000
+    volumes:
+      - redis_data:/data
+      - ./config/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - plantcare_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # FastAPI Application Service
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: plantcare_api
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql+asyncpg://postgres:${DB_PASSWORD:-plantcare_dev_password}@postgres:5432/plantcare_db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    volumes:
+      - ./app:/app/app:ro
+      - ./migrations:/app/migrations:ro
+      - ./config:/app/config:ro
+      - ./scripts:/app/scripts:ro
+      - api_uploads:/app/uploads
+      - api_logs:/app/logs
+    ports:
+      - "${PORT:-8000}:8000"
+    networks:
+      - plantcare_network
+    depends_on:
+      - postgres
+
+# =============================================================================
+# NETWORKS CONFIGURATION
+# =============================================================================
+networks:
+  plantcare_network:
+    driver: bridge
+
+# =============================================================================
+# VOLUMES CONFIGURATION
+# =============================================================================
+volumes:
+  postgres_data:
+  redis_data:
+  api_uploads:
+  api_logs:

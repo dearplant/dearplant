@@ -1,0 +1,116 @@
+# 📄 File: requirements.txt
+#
+# 🧭 Purpose (Layman Explanation):
+# Lists all the external libraries and tools our Plant Care app needs to run properly,
+# like ingredients in a recipe that need to be installed before cooking.
+#
+# 🧪 Purpose (Technical Summary):
+# Defines Python package dependencies with specific versions for reproducible builds
+# and consistent development/production environments.
+#
+# 🔗 Dependencies:
+# - Python 3.11+
+# - pip package manager
+#
+# 🔄 Connected Modules / Calls From:
+# - Docker build process
+# - CI/CD deployment pipelines
+# - Development environment setup scripts
+
+# Core Framework
+fastapi==0.116.1
+uvicorn[standard]==0.29.0
+
+# Database & ORM
+sqlalchemy[asyncio]==2.0.28
+alembic==1.13.1
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+
+# Pydantic & Validation
+pydantic==2.6.3
+pydantic-settings==2.2.1
+email-validator==2.1.1
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.9
+cryptography==42.0.5
+
+# Supabase Integration
+supabase==2.4.0
+postgrest==0.16.2
+storage3==0.7.4
+gotrue==2.4.2
+
+# Redis & Caching
+redis[hiredis]==5.0.3
+aioredis==2.0.1
+
+# Background Jobs
+celery==5.3.6
+flower==2.0.1
+
+# HTTP Client & External APIs
+aiohttp==3.9.3
+requests==2.31.0
+
+# File Processing & Storage
+pillow==10.2.0
+python-magic==0.4.27
+
+# Monitoring & Logging
+structlog==24.1.0
+rich==13.7.1
+
+# Rate Limiting
+slowapi==0.1.9
+limits==3.8.0
+
+# Environment Management
+python-dotenv==1.0.1
+
+# Utilities
+pytz==2024.1
+python-dateutil==2.9.0
+uuid==1.30
+
+# AI & ML APIs
+openai==1.13.3
+anthropic==0.21.3
+google-generativeai==0.4.1
+
+# Weather APIs
+pyowm==3.3.0
+
+# Plant Identification APIs
+# (Will be implemented via httpx)
+
+# Payment Processing
+razorpay==1.4.2
+stripe==8.11.0
+
+# Communication
+twilio==9.0.4
+sendgrid==6.11.0
+
+# Data Processing
+pandas==2.2.1
+numpy==1.26.4
+
+# Testing (for development)
+pytest==8.1.1
+pytest-asyncio==0.23.5
+pytest-mock==3.12.0
+
+# Development Tools
+black==24.3.0
+isort==5.13.2
+flake8==7.0.0
+mypy==1.9.0
+pre-commit==3.7.0
+
+# Documentation
+mkdocs==1.5.3
+mkdocs-material==9.5.13
