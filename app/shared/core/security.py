@@ -11,6 +11,7 @@ from functools import lru_cache
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from fastapi import HTTPException, status
+from pydantic import BaseModel
 
 from ..config.settings import get_settings
 
@@ -19,6 +20,12 @@ logger = logging.getLogger(__name__)
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+class TokenData(BaseModel):
+    """Token payload data structure"""
+    user_id: Optional[str] = None
+    email: Optional[str] = None
+    is_premium: Optional[bool] = False
+    scopes: Optional[list] = []
 
 class SecurityManager:
     """
@@ -438,3 +445,20 @@ def generate_api_key(user_id: str, purpose: str = "api_access") -> str:
 def verify_api_key(api_key: str) -> Dict[str, Any]:
     """Verify API key."""
     return get_security_manager().verify_api_key(api_key)
+
+def decode_token(token: str) -> Optional[Dict[str, Any]]:
+    """
+    Decode a JWT token and return raw payload
+    
+    Args:
+        token: JWT token string
+        
+    Returns:
+        Dict: Raw token payload if valid, None if invalid
+    """
+    try:
+        security_manager = get_security_manager()
+        payload = jwt.decode(token, security_manager.secret_key, algorithms=[security_manager.algorithm])
+        return payload
+    except JWTError:
+        return None

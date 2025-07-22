@@ -35,10 +35,12 @@ import uvicorn
 from app.shared.config.settings import get_settings
 from app.shared.core.exceptions import PlantCareException
 from app.shared.utils.logging import setup_logging
-# from app.api.middleware.authentication import AuthenticationMiddleware
-# from app.api.middleware.rate_limiting import RateLimitingMiddleware
-# from app.api.middleware.logging import RequestLoggingMiddleware
+from app.api.middleware.authentication import AuthenticationMiddleware
+from app.api.middleware.rate_limiting import RateLimitingMiddleware
+from app.api.middleware.logging import RequestLoggingMiddleware
 from app.api.middleware.error_handling import ErrorHandlingMiddleware
+from app.api.middleware.cors import PlantCareCORSMiddleware
+from app.api.middleware.localization import LocalizationMiddleware
 from app.api.v1.router import api_v1_router
 from app.api.v1.health import health_router
 
@@ -142,19 +144,25 @@ def create_application() -> FastAPI:
     app.add_middleware(ErrorHandlingMiddleware)
     
     # # Request logging middleware
-    # if settings.ENVIRONMENT != "test":
-    #     app.add_middleware(RequestLoggingMiddleware)
+    if settings.ENVIRONMENT != "test":
+        app.add_middleware(RequestLoggingMiddleware)
     
     # Rate limiting middleware
-    # app.add_middleware(
-    #     # RateLimitingMiddleware,
-    #     global_rate_limit=settings.GLOBAL_RATE_LIMIT,
-    #     premium_rate_limit=settings.PREMIUM_RATE_LIMIT,
-    #     admin_rate_limit=settings.ADMIN_RATE_LIMIT,
-    # )
+    app.add_middleware(
+        RateLimitingMiddleware,
+        global_rate_limit=settings.GLOBAL_RATE_LIMIT,
+        premium_rate_limit=settings.PREMIUM_RATE_LIMIT,
+        admin_rate_limit=settings.ADMIN_RATE_LIMIT,
+    )
     
+    # CORS Middleware (should be early in the stack)
+    app.add_middleware(PlantCareCORSMiddleware)
+
+    # Localization Middleware (after CORS, before authentication)
+    app.add_middleware(LocalizationMiddleware)
+
     # Authentication middleware
-    # app.add_middleware(AuthenticationMiddleware)
+    app.add_middleware(AuthenticationMiddleware)
     
     # CORS middleware
     app.add_middleware(
