@@ -48,7 +48,8 @@ from app.api.v1.health import health_router
 settings = get_settings()
 
 # Setup logging
-logger = setup_logging()
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager

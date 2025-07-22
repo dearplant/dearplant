@@ -28,12 +28,40 @@ import logging
 from typing import Optional, Dict, Any
 from app.shared.config.settings import get_settings
 from datetime import datetime
+from sqlalchemy.orm import DeclarativeBase, declarative_base
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
 _engine: Optional[AsyncEngine] = None
 _session_maker: Optional[async_sessionmaker] = None
+
+# Add this class definition after the imports section
+class Base(DeclarativeBase):
+    """
+    SQLAlchemy declarative base class for all database models.
+    
+    This serves as the base class for all SQLAlchemy ORM models
+    throughout the Plant Care application.
+    """
+    pass
+
+# Alternative approach (if the above doesn't work, use this instead):
+# Base = declarative_base()
+
+# Make sure to export Base in the module
+# Add this at the end of the file:
+__all__ = [
+    'DatabaseConnectionManager',
+    'db_manager', 
+    'initialize_database',
+    'close_database',
+    'get_database_engine',
+    'database_health_check',
+    'get_connection_info',
+    'init_database',
+    'Base'  # Add this line
+]
 
 class DatabaseConnectionManager:
     """

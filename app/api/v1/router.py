@@ -6,7 +6,7 @@
 # Main API v1 router aggregation that combines all module routers, configures route prefixes,
 # and provides centralized routing management for the FastAPI application.
 # 🔗 Dependencies: 
-# FastAPI, app.api.v1.health, future module routers
+# FastAPI, app.api.v1.health, app.modules.user_management.presentation.api.v1.*
 # 🔄 Connected Modules / Calls From: 
 # app.main.py, all v1 module routers (when implemented)
 
@@ -130,27 +130,54 @@ async def api_v1_status() -> JSONResponse:
 
 
 # =========================================================================
+# MODULE ROUTER INCLUDES - USER MANAGEMENT MODULE (ACTIVE)
+# =========================================================================
+
+# 🎉 USER MANAGEMENT MODULE - FULLY IMPLEMENTED AND ACTIVE
+logger.info("🚀 Loading User Management module routers...")
+
+try:
+    # Authentication endpoints
+    from app.modules.user_management.presentation.api.v1.auth import auth_router
+    api_v1_router.include_router(
+        auth_router,
+        prefix=ROUTE_PREFIXES["auth"],
+        tags=["Authentication"]
+    )
+    logger.info("✅ Authentication router loaded")
+    
+    # User management endpoints  
+    from app.modules.user_management.presentation.api.v1.users import users_router
+    api_v1_router.include_router(
+        users_router,
+        prefix=ROUTE_PREFIXES["users"],
+        tags=["Users"]
+    )
+    logger.info("✅ Users router loaded")
+    
+    # Profile management endpoints
+    from app.modules.user_management.presentation.api.v1.profiles import profiles_router
+    api_v1_router.include_router(
+        profiles_router,
+        prefix="/profiles",  # Custom prefix for profiles
+        tags=["Profiles"]
+    )
+    logger.info("✅ Profiles router loaded")
+    
+    logger.info("🌟 User Management module successfully activated!")
+    
+except ImportError as e:
+    logger.error(f"❌ Failed to load User Management routers: {e}")
+    logger.warning("🔄 User Management module routers not available - check implementation")
+except Exception as e:
+    logger.error(f"❌ Unexpected error loading User Management module: {e}")
+
+
+# =========================================================================
 # MODULE ROUTER INCLUDES (TO BE ADDED AS MODULES ARE IMPLEMENTED)
 # =========================================================================
 
 # NOTE: These router includes will be uncommented as modules are implemented
-
-# Authentication & Users
-# from app.modules.user_management.presentation.api.v1.auth import auth_router
-# from app.modules.user_management.presentation.api.v1.users import users_router
-# from app.modules.user_management.presentation.api.v1.profiles import profiles_router
-
-# api_v1_router.include_router(
-#     auth_router,
-#     prefix=ROUTE_PREFIXES["auth"],
-#     tags=["Authentication"]
-# )
-
-# api_v1_router.include_router(
-#     users_router,
-#     prefix=ROUTE_PREFIXES["users"],
-#     tags=["Users"]
-# )
 
 # Plant Management
 # from app.modules.plant_management.presentation.api.v1.plants import plants_router
@@ -288,97 +315,95 @@ async def api_v1_status() -> JSONResponse:
 # UTILITY FUNCTIONS
 # =========================================================================
 
-def _get_available_modules() -> Dict[str, Dict[str, Any]]:
+def _get_available_modules() -> Dict[str, Any]:
     """
-    Get information about available API modules
+    Get list of available and loaded modules.
     
     Returns:
-        Dictionary with module availability and status
+        Dict[str, Any]: Module availability status
     """
     modules = {
-        "authentication": {
-            "status": "planned",
-            "description": "User authentication and authorization",
-            "routes": ["/auth/login", "/auth/register", "/auth/refresh"],
-            "implemented": False
+        "user_management": {
+            "status": "active",
+            "version": "1.0.0", 
+            "endpoints": [
+                "auth",
+                "users", 
+                "profiles"
+            ],
+            "description": "User authentication, profiles, and account management"
         },
-        "users": {
+        "plant_management": {
+            "status": "planned",
+            "version": "1.0.0",
+            "endpoints": [],
+            "description": "Plant CRUD, identification, and library management"
+        },
+        "care_management": {
+            "status": "planned",
+            "version": "1.0.0", 
+            "endpoints": [],
+            "description": "Care scheduling, tasks, and history tracking"
+        },
+        "health_monitoring": {
+            "status": "planned",
+            "version": "1.0.0",
+            "endpoints": [],
+            "description": "Plant health assessment and diagnosis"
+        },
+        "growth_tracking": {
+            "status": "planned",
+            "version": "1.0.0",
+            "endpoints": [],
+            "description": "Growth milestones and analysis tracking"
+        },
+        "community_social": {
             "status": "planned", 
-            "description": "User profile and account management",
-            "routes": ["/users/profile", "/users/settings"],
-            "implemented": False
+            "version": "1.0.0",
+            "endpoints": [],
+            "description": "Community posts, feed, and social interactions"
         },
-        "plants": {
+        "ai_smart_features": {
             "status": "planned",
-            "description": "Plant management and identification",
-            "routes": ["/plants", "/plants/identify", "/plants/library"],
-            "implemented": False
+            "version": "1.0.0",
+            "endpoints": [],
+            "description": "AI chat, recommendations, and automation"
         },
-        "care": {
+        "weather_environmental": {
             "status": "planned",
-            "description": "Plant care scheduling and tracking",
-            "routes": ["/care/schedules", "/care/tasks", "/care/history"],
-            "implemented": False
+            "version": "1.0.0",
+            "endpoints": [],
+            "description": "Weather data and environmental monitoring"
         },
-        "health": {
+        "analytics_insights": {
             "status": "planned",
-            "description": "Plant health monitoring and diagnosis", 
-            "routes": ["/health/records", "/health/diagnosis"],
-            "implemented": False
+            "version": "1.0.0",
+            "endpoints": [],
+            "description": "Analytics dashboards and insights"
         },
-        "growth": {
+        "notification_communication": {
             "status": "planned",
-            "description": "Plant growth tracking and analysis",
-            "routes": ["/growth/timeline", "/growth/milestones"],
-            "implemented": False
+            "version": "1.0.0",
+            "endpoints": [],
+            "description": "Push notifications and communication templates"
         },
-        "community": {
+        "payment_subscription": {
             "status": "planned",
-            "description": "Social features and community interaction",
-            "routes": ["/community/posts", "/community/feed"],
-            "implemented": False
+            "version": "1.0.0",
+            "endpoints": [],
+            "description": "Payment processing and subscription management"
         },
-        "ai": {
+        "content_management": {
             "status": "planned",
-            "description": "AI-powered smart features",
-            "routes": ["/ai/chat", "/ai/recommendations"],
-            "implemented": False
+            "version": "1.0.0",
+            "endpoints": [],
+            "description": "Content management and multilingual support"
         },
-        "weather": {
+        "admin_management": {
             "status": "planned",
-            "description": "Weather and environmental data",
-            "routes": ["/weather/current", "/weather/forecast"],
-            "implemented": False
-        },
-        "analytics": {
-            "status": "planned",
-            "description": "Analytics and insights",
-            "routes": ["/analytics/dashboard", "/analytics/reports"],
-            "implemented": False
-        },
-        "notifications": {
-            "status": "planned",
-            "description": "Notification and communication management",
-            "routes": ["/notifications", "/notifications/preferences"],
-            "implemented": False
-        },
-        "payments": {
-            "status": "planned",
-            "description": "Payment processing and subscriptions",
-            "routes": ["/payments/process", "/payments/subscriptions"],
-            "implemented": False
-        },
-        "content": {
-            "status": "planned",
-            "description": "Content and knowledge base management",
-            "routes": ["/content/articles", "/content/knowledge"],
-            "implemented": False
-        },
-        "admin": {
-            "status": "planned",
-            "description": "Administrative functions",
-            "routes": ["/admin/dashboard", "/admin/users", "/admin/system"],
-            "implemented": False
+            "version": "1.0.0",
+            "endpoints": [],
+            "description": "Administrative dashboards and system controls"
         }
     }
     
@@ -387,39 +412,95 @@ def _get_available_modules() -> Dict[str, Dict[str, Any]]:
 
 def _get_module_status() -> Dict[str, str]:
     """
-    Get current implementation status of all modules
+    Get current status of all modules.
     
     Returns:
-        Dictionary with module names and their implementation status
+        Dict[str, str]: Module name to status mapping
     """
-    modules = _get_available_modules()
-    return {
-        module_name: module_info["status"] 
-        for module_name, module_info in modules.items()
-    }
+    try:
+        modules = _get_available_modules()
+        return {name: info["status"] for name, info in modules.items()}
+    except Exception as e:
+        logger.error(f"Failed to get module status: {e}")
+        return {"error": "status_unavailable"}
 
 
-def _get_feature_status() -> Dict[str, str]:
+def _get_feature_status() -> Dict[str, Any]:
     """
-    Get current status of major features
+    Get current feature availability status.
     
     Returns:
-        Dictionary with feature names and their availability status
+        Dict[str, Any]: Feature availability information
     """
-    return {
-        "user_authentication": "planned",
-        "plant_identification": "planned", 
-        "care_scheduling": "planned",
-        "health_monitoring": "planned",
-        "growth_tracking": "planned",
-        "ai_chat": "planned",
-        "community_features": "planned",
-        "weather_integration": "planned",
-        "payment_processing": "planned",
-        "admin_panel": "planned",
-        "mobile_app_support": "planned",
-        "real_time_notifications": "planned",
-        "offline_mode": "planned",
-        "multi_language": "planned"
-    }
- 
+    try:
+        features = {
+            "authentication": {
+                "available": True,
+                "endpoints": ["/auth/login", "/auth/register", "/auth/refresh"],
+                "oauth_providers": ["google", "apple"]
+            },
+            "user_management": {
+                "available": True,
+                "endpoints": ["/users", "/users/{id}", "/users/me"],
+                "features": ["profile_management", "account_settings"]
+            },
+            "profile_management": {
+                "available": True,
+                "endpoints": ["/profiles", "/profiles/{id}"],
+                "features": ["photo_upload", "bio_management", "privacy_settings"]
+            },
+            "plant_management": {
+                "available": False,
+                "reason": "module_not_implemented"
+            },
+            "care_scheduling": {
+                "available": False,
+                "reason": "module_not_implemented"
+            },
+            "health_monitoring": {
+                "available": False,
+                "reason": "module_not_implemented"
+            },
+            "growth_tracking": {
+                "available": False,
+                "reason": "module_not_implemented"
+            },
+            "community_features": {
+                "available": False,
+                "reason": "module_not_implemented"
+            },
+            "ai_features": {
+                "available": False,
+                "reason": "module_not_implemented"
+            },
+            "weather_integration": {
+                "available": False,
+                "reason": "module_not_implemented"
+            },
+            "analytics": {
+                "available": False,
+                "reason": "module_not_implemented"
+            },
+            "notifications": {
+                "available": False,
+                "reason": "module_not_implemented"
+            },
+            "payments": {
+                "available": False,
+                "reason": "module_not_implemented"
+            },
+            "content_management": {
+                "available": False,
+                "reason": "module_not_implemented"
+            },
+            "admin_features": {
+                "available": False,
+                "reason": "module_not_implemented"
+            }
+        }
+        
+        return features
+        
+    except Exception as e:
+        logger.error(f"Failed to get feature status: {e}")
+        return {"error": "feature_status_unavailable"}

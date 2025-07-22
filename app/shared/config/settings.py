@@ -292,10 +292,10 @@ class Settings(BaseSettings):
     # RATE LIMITING
     # =========================================================================
     
-    # Global rate limits (requests per hour)
-    GLOBAL_RATE_LIMIT: int = Field(default=1000, description="Global rate limit")
-    PREMIUM_RATE_LIMIT: int = Field(default=5000, description="Premium rate limit")
-    ADMIN_RATE_LIMIT: int = Field(default=10000, description="Admin rate limit")
+    # Global rate limits (requests per period)
+    GLOBAL_RATE_LIMIT: str = Field(default="1000/minute", description="Global rate limit in '<limit>/<period>' format")
+    PREMIUM_RATE_LIMIT: str = Field(default="5000/minute", description="Premium rate limit in '<limit>/<period>' format")
+    ADMIN_RATE_LIMIT: str = Field(default="10000/minute", description="Admin rate limit in '<limit>/<period>' format")
     
     # API specific limits
     PLANT_ID_RATE_LIMIT: int = Field(default=50, description="Plant ID rate limit")

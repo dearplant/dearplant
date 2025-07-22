@@ -57,7 +57,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 
 from app.modules.user_management.application.commands.create_user import CreateUserCommand
 from app.modules.user_management.application.handlers.command_handlers import (
@@ -86,7 +85,7 @@ from app.modules.user_management.presentation.api.schemas.auth_schemas import (
 from app.modules.user_management.infrastructure.external.supabase_auth import SupabaseAuthService
 from app.modules.user_management.infrastructure.external.oauth_providers import OAuthProviderManager
 from app.shared.core.security import create_access_token, verify_password
-from app.shared.core.exceptions import AuthenticationError, ValidationError
+from app.shared.core.exceptions import AuthenticationError, ValidationError,RateLimitError
 from passlib.context import CryptContext
 
 logger = logging.getLogger(__name__)
@@ -100,10 +99,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Create router
 auth_router = APIRouter()
-
-# Add rate limit exceeded handler
-auth_router.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
 
 @auth_router.post(
     "/register",

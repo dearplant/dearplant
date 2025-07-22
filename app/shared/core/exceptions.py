@@ -5,7 +5,9 @@ Provides specific exceptions for different error scenarios with proper HTTP stat
 
 from typing import Any, Dict, Optional, Union
 from fastapi import HTTPException, status
-
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
+from fastapi import Request
 
 class PlantCareException(Exception):
     """
@@ -537,3 +539,25 @@ class APITimeoutError(ExternalAPIError):
                 "suggestion": "Retry after some time or check network"
             }
         )
+
+def rate_limit_error_handler(request: Request, exc: RateLimitError):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=exc.to_dict()
+    )
+
+def slowapi_rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": {
+                "code": "RATE_LIMIT_EXCEEDED",
+                "message": "Too many requests. Please slow down.",
+                "details": {
+                    "limit": exc.detail,
+                    "retry_after": exc.headers.get("Retry-After")
+                },
+                "status_code": 429
+            }
+        }
+    )

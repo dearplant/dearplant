@@ -1,412 +1,355 @@
-# 📄 File: app/modules/user_management/infrastructure/database/profile_repository_impl.py
-# 🧭 Purpose (Layman Explanation):
-# This file handles all database operations for user profiles, including storing personal information,
-# preferences, photos, and settings like language and theme choices for our plant care app users.
-#
-# 🧪 Purpose (Technical Summary):
-# Concrete implementation of ProfileRepository interface using SQLAlchemy ORM,
-# providing async database operations for profile entities with relationship management.
-#
-# 🔗 Dependencies:
-# - app.modules.user_management.domain.repositories.profile_repository (interface)
-# - app.modules.user_management.domain.models.profile (domain model)
-# - app.modules.user_management.infrastructure.database.models (SQLAlchemy models)
-# - SQLAlchemy async session and query operations
-#
-# 🔄 Connected Modules / Calls From:
-# - app.modules.user_management.application.handlers (profile command and query handlers)
-# - app.modules.user_management.domain.services (profile service operations)
-# - Dependency injection container (repository registration)
+# Add this content to app/modules/user_management/infrastructure/external/supabase_auth.py
+
+# 📄 File: app/modules/user_management/infrastructure/external/supabase_auth.py
+# 🧭 Purpose (Layman Explanation): 
+# This file handles all the authentication work with Supabase, like checking if users are who they say they are,
+# validating login tokens, and managing user sessions for the plant care app.
+# 🧪 Purpose (Technical Summary): 
+# Supabase authentication service implementation providing JWT token validation, user session management,
+# and OAuth integration for the User Management module.
+# 🔗 Dependencies: 
+# supabase, app.shared.config.supabase, app.shared.core.exceptions, typing, logging
+# 🔄 Connected Modules / Calls From: 
+# app.modules.user_management.presentation.dependencies, auth routers, user management handlers
 
 """
-Profile Repository Implementation
+Supabase Authentication Service
 
-This module provides the concrete implementation of the ProfileRepository interface
-using SQLAlchemy for database operations. It handles the mapping between
-domain Profile entities and ProfileModel database records.
+This module provides authentication services using Supabase Auth for the User Management module.
 
 Features:
-- Async database operations with proper error handling
-- Domain model to SQLAlchemy model mapping
-- Profile CRUD operations with user relationship management
-- Location-based profile searching
-- Privacy and preference management
+- JWT token validation and verification
+- User session management
+- OAuth integration support
+- Token refresh capabilities
+- User authentication status checking
+- Security event logging
+
+The service integrates with Supabase Auth to provide secure, scalable authentication
+for the Plant Care application while maintaining compatibility with the domain architecture.
 """
 
 import logging
-from typing import List, Optional
-from uuid import UUID
+from typing import Optional, Dict, Any, List
+from datetime import datetime, timedelta
 
-from sqlalchemy import select, and_
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import selectinload
+from supabase import Client
+from gotrue import User, Session
+from gotrue.errors import AuthApiError
 
-from app.modules.user_management.domain.repositories.profile_repository import ProfileRepository
-from app.modules.user_management.domain.models.profile import Profile
-from app.modules.user_management.infrastructure.database.models import ProfileModel, UserModel
+from app.shared.config.supabase import get_supabase_client
+from app.shared.core.exceptions import (
+    AuthenticationError,
+    AuthorizationError,
+    ValidationError
+)
 
 logger = logging.getLogger(__name__)
 
 
-class ProfileRepositoryImpl(ProfileRepository):
+class SupabaseAuthService:
     """
-    SQLAlchemy implementation of the ProfileRepository interface.
+    Supabase authentication service for User Management module.
     
-    This repository handles all database operations for profile entities,
-    providing async operations with proper error handling and user relationship management.
+    Provides JWT token validation, user session management, and OAuth integration
+    using Supabase Auth as the underlying authentication provider.
     """
     
-    def __init__(self, session: AsyncSession):
+    def __init__(self):
+        """Initialize Supabase authentication service."""
+        self._client: Optional[Client] = None
+    
+    @property
+    def client(self) -> Client:
+        """Get Supabase client with lazy initialization."""
+        if self._client is None:
+            self._client = get_supabase_client()
+        return self._client
+    
+    async def verify_token(self, token: str) -> Optional[Dict[str, Any]]:
         """
-        Initialize the profile repository.
+        Verify JWT token and return user information.
         
         Args:
-            session: SQLAlchemy async session for database operations
-        """
-        self._session = session
-    
-    async def create(self, profile: Profile) -> Profile:
-        """
-        Create a new profile in the database.
-        
-        Args:
-            profile: Domain Profile entity to create
+            token: JWT token to verify
             
         Returns:
-            Profile: Created profile entity with generated ID
+            Dict containing user information if valid, None if invalid
             
         Raises:
-            ValueError: If profile for user already exists or user not found
-            Exception: For other database errors
+            AuthenticationError: If token verification fails
         """
         try:
-            # Verify user exists
-            user_exists = await self._user_exists(profile.user_id)
-            if not user_exists:
-                raise ValueError(f"User not found: {profile.user_id}")
+            # Remove 'Bearer ' prefix if present
+            if token.startswith('Bearer '):
+                token = token[7:]
             
-            profile_model = self._domain_to_model(profile)
+            # Set the session with the token
+            session_response = await self._verify_session_token(token)
             
-            self._session.add(profile_model)
-            await self._session.flush()  # Get the generated ID
+            if not session_response:
+                return None
             
-            logger.info(f"Created profile with ID: {profile_model.profile_id} for user: {profile.user_id}")
-            return self._model_to_domain(profile_model)
+            user = session_response.get('user')
+            if not user:
+                return None
             
-        except IntegrityError as e:
-            await self._session.rollback()
-            logger.warning(f"Profile creation failed - profile already exists for user: {profile.user_id}")
-            raise ValueError(f"Profile already exists for user {profile.user_id}") from e
+            # Extract user information from token payload
+            user_data = {
+                'sub': user.get('id'),
+                'email': user.get('email'),
+                'user_metadata': user.get('user_metadata', {}),
+                'app_metadata': user.get('app_metadata', {}),
+                'aud': user.get('aud', 'authenticated'),
+                'exp': user.get('exp'),
+                'iat': user.get('iat'),
+                'iss': user.get('iss'),
+                'email_verified': user.get('email_confirmed_at') is not None,
+                'phone_verified': user.get('phone_confirmed_at') is not None,
+                'last_sign_in_at': user.get('last_sign_in_at')
+            }
             
-        except ValueError:
-            raise
-        except SQLAlchemyError as e:
-            await self._session.rollback()
-            logger.error(f"Database error during profile creation: {str(e)}")
-            raise Exception(f"Failed to create profile: {str(e)}") from e
+            logger.debug(f"Token verified successfully for user: {user_data.get('sub')}")
+            return user_data
+            
+        except AuthApiError as e:
+            logger.warning(f"Supabase auth error during token verification: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error during token verification: {e}")
+            raise AuthenticationError("Token verification failed")
     
-    async def get_by_id(self, profile_id: UUID) -> Optional[Profile]:
+    async def _verify_session_token(self, token: str) -> Optional[Dict[str, Any]]:
         """
-        Retrieve a profile by its ID.
+        Verify session token with Supabase.
         
         Args:
-            profile_id: UUID of the profile to retrieve
+            token: JWT token to verify
             
         Returns:
-            Optional[Profile]: Profile entity if found, None otherwise
+            Session data if valid, None if invalid
         """
         try:
-            stmt = select(ProfileModel).where(ProfileModel.profile_id == profile_id)
-            result = await self._session.execute(stmt)
-            profile_model = result.scalar_one_or_none()
+            # Use Supabase client to verify the token
+            response = self.client.auth.get_user(token)
             
-            if profile_model:
-                logger.debug(f"Retrieved profile: {profile_id}")
-                return self._model_to_domain(profile_model)
+            if response and response.user:
+                return {
+                    'user': {
+                        'id': response.user.id,
+                        'email': response.user.email,
+                        'user_metadata': response.user.user_metadata,
+                        'app_metadata': response.user.app_metadata,
+                        'aud': response.user.aud,
+                        'exp': None,  # Will be populated from JWT
+                        'iat': None,  # Will be populated from JWT  
+                        'iss': None,  # Will be populated from JWT
+                        'email_confirmed_at': response.user.email_confirmed_at,
+                        'phone_confirmed_at': response.user.phone_confirmed_at,
+                        'last_sign_in_at': response.user.last_sign_in_at
+                    }
+                }
             
-            logger.debug(f"Profile not found: {profile_id}")
             return None
             
-        except SQLAlchemyError as e:
-            logger.error(f"Database error retrieving profile {profile_id}: {str(e)}")
-            raise Exception(f"Failed to retrieve profile: {str(e)}") from e
+        except AuthApiError:
+            return None
+        except Exception as e:
+            logger.error(f"Session token verification error: {e}")
+            return None
     
-    async def get_by_user_id(self, user_id: UUID) -> Optional[Profile]:
+    async def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
-        Retrieve a profile by user ID.
+        Get user information by user ID.
         
         Args:
-            user_id: UUID of the user whose profile to retrieve
+            user_id: User UUID
             
         Returns:
-            Optional[Profile]: Profile entity if found, None otherwise
+            User information if found, None otherwise
         """
         try:
-            stmt = select(ProfileModel).where(ProfileModel.user_id == user_id)
-            result = await self._session.execute(stmt)
-            profile_model = result.scalar_one_or_none()
-            
-            if profile_model:
-                logger.debug(f"Retrieved profile for user: {user_id}")
-                return self._model_to_domain(profile_model)
-            
-            logger.debug(f"Profile not found for user: {user_id}")
+            # Note: This would require admin privileges or service role key
+            # For now, return None as we'll rely on token-based user info
+            logger.debug(f"User lookup by ID not implemented for: {user_id}")
             return None
             
-        except SQLAlchemyError as e:
-            logger.error(f"Database error retrieving profile for user {user_id}: {str(e)}")
-            raise Exception(f"Failed to retrieve profile for user: {str(e)}") from e
+        except Exception as e:
+            logger.error(f"Error getting user by ID: {e}")
+            return None
     
-    async def update(self, profile: Profile) -> Profile:
+    async def refresh_token(self, refresh_token: str) -> Optional[Dict[str, Any]]:
         """
-        Update an existing profile in the database.
+        Refresh access token using refresh token.
         
         Args:
-            profile: Domain Profile entity with updated data
+            refresh_token: Refresh token
             
         Returns:
-            Profile: Updated profile entity
-            
-        Raises:
-            ValueError: If profile not found
-            Exception: For other database errors
+            New token information if successful, None otherwise
         """
         try:
-            stmt = select(ProfileModel).where(ProfileModel.profile_id == profile.profile_id)
-            result = await self._session.execute(stmt)
-            profile_model = result.scalar_one_or_none()
+            response = self.client.auth.refresh_session(refresh_token)
             
-            if not profile_model:
-                raise ValueError(f"Profile not found: {profile.profile_id}")
+            if response and response.session:
+                return {
+                    'access_token': response.session.access_token,
+                    'refresh_token': response.session.refresh_token,
+                    'expires_in': response.session.expires_in,
+                    'token_type': response.session.token_type,
+                    'user': {
+                        'id': response.user.id,
+                        'email': response.user.email,
+                        'user_metadata': response.user.user_metadata,
+                        'app_metadata': response.user.app_metadata
+                    }
+                }
             
-            # Update model fields from domain entity
-            self._update_model_from_domain(profile_model, profile)
+            return None
             
-            await self._session.flush()
-            
-            logger.info(f"Updated profile: {profile.profile_id}")
-            return self._model_to_domain(profile_model)
-            
-        except ValueError:
-            raise
-        except SQLAlchemyError as e:
-            await self._session.rollback()
-            logger.error(f"Database error updating profile {profile.profile_id}: {str(e)}")
-            raise Exception(f"Failed to update profile: {str(e)}") from e
+        except AuthApiError as e:
+            logger.warning(f"Token refresh failed: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error during token refresh: {e}")
+            return None
     
-    async def delete(self, profile_id: UUID) -> bool:
+    async def sign_out(self, token: str) -> bool:
         """
-        Delete a profile from the database.
+        Sign out user and invalidate token.
         
         Args:
-            profile_id: UUID of the profile to delete
+            token: Access token to invalidate
             
         Returns:
-            bool: True if profile was deleted, False if not found
+            True if successful, False otherwise
         """
         try:
-            stmt = select(ProfileModel).where(ProfileModel.profile_id == profile_id)
-            result = await self._session.execute(stmt)
-            profile_model = result.scalar_one_or_none()
-            
-            if not profile_model:
-                logger.debug(f"Profile not found for deletion: {profile_id}")
-                return False
-            
-            await self._session.delete(profile_model)
-            await self._session.flush()
-            
-            logger.info(f"Deleted profile: {profile_id}")
+            self.client.auth.sign_out()
+            logger.info("User signed out successfully")
             return True
             
-        except SQLAlchemyError as e:
-            await self._session.rollback()
-            logger.error(f"Database error deleting profile {profile_id}: {str(e)}")
-            raise Exception(f"Failed to delete profile: {str(e)}") from e
-    
-    async def delete_by_user_id(self, user_id: UUID) -> bool:
-        """
-        Delete a profile by user ID.
-        
-        Args:
-            user_id: UUID of the user whose profile to delete
-            
-        Returns:
-            bool: True if profile was deleted, False if not found
-        """
-        try:
-            stmt = select(ProfileModel).where(ProfileModel.user_id == user_id)
-            result = await self._session.execute(stmt)
-            profile_model = result.scalar_one_or_none()
-            
-            if not profile_model:
-                logger.debug(f"Profile not found for deletion by user ID: {user_id}")
-                return False
-            
-            await self._session.delete(profile_model)
-            await self._session.flush()
-            
-            logger.info(f"Deleted profile for user: {user_id}")
-            return True
-            
-        except SQLAlchemyError as e:
-            await self._session.rollback()
-            logger.error(f"Database error deleting profile for user {user_id}: {str(e)}")
-            raise Exception(f"Failed to delete profile for user: {str(e)}") from e
-    
-    async def get_by_location(self, location: str) -> List[Profile]:
-        """
-        Retrieve profiles by location for weather data integration.
-        
-        Args:
-            location: Location string to search for
-            
-        Returns:
-            List[Profile]: List of profiles in the specified location
-        """
-        try:
-            stmt = select(ProfileModel).where(ProfileModel.location.ilike(f"%{location}%"))
-            result = await self._session.execute(stmt)
-            profile_models = result.scalars().all()
-            
-            profiles = [self._model_to_domain(model) for model in profile_models]
-            logger.debug(f"Retrieved {len(profiles)} profiles for location: {location}")
-            return profiles
-            
-        except SQLAlchemyError as e:
-            logger.error(f"Database error retrieving profiles by location {location}: {str(e)}")
-            raise Exception(f"Failed to retrieve profiles by location: {str(e)}") from e
-    
-    async def get_profiles_with_notifications_enabled(self) -> List[Profile]:
-        """
-        Retrieve all profiles with notifications enabled.
-        
-        Returns:
-            List[Profile]: List of profiles with notifications enabled
-        """
-        try:
-            stmt = select(ProfileModel).where(ProfileModel.notification_enabled == True)
-            result = await self._session.execute(stmt)
-            profile_models = result.scalars().all()
-            
-            profiles = [self._model_to_domain(model) for model in profile_models]
-            logger.debug(f"Retrieved {len(profiles)} profiles with notifications enabled")
-            return profiles
-            
-        except SQLAlchemyError as e:
-            logger.error(f"Database error retrieving profiles with notifications: {str(e)}")
-            raise Exception(f"Failed to retrieve profiles with notifications: {str(e)}") from e
-    
-    async def search_by_display_name(self, name_pattern: str, limit: int = 50) -> List[Profile]:
-        """
-        Search profiles by display name pattern.
-        
-        Args:
-            name_pattern: Pattern to search for in display names
-            limit: Maximum number of results to return
-            
-        Returns:
-            List[Profile]: List of matching profiles
-        """
-        try:
-            stmt = (
-                select(ProfileModel)
-                .where(ProfileModel.display_name.ilike(f"%{name_pattern}%"))
-                .limit(limit)
-            )
-            result = await self._session.execute(stmt)
-            profile_models = result.scalars().all()
-            
-            profiles = [self._model_to_domain(model) for model in profile_models]
-            logger.debug(f"Found {len(profiles)} profiles matching name pattern: {name_pattern}")
-            return profiles
-            
-        except SQLAlchemyError as e:
-            logger.error(f"Database error searching profiles by name {name_pattern}: {str(e)}")
-            raise Exception(f"Failed to search profiles by name: {str(e)}") from e
-    
-    async def _user_exists(self, user_id: UUID) -> bool:
-        """
-        Check if a user exists in the database.
-        
-        Args:
-            user_id: UUID of the user to check
-            
-        Returns:
-            bool: True if user exists, False otherwise
-        """
-        try:
-            stmt = select(UserModel.user_id).where(UserModel.user_id == user_id)
-            result = await self._session.execute(stmt)
-            return result.scalar_one_or_none() is not None
-        except SQLAlchemyError:
+        except Exception as e:
+            logger.error(f"Error during sign out: {e}")
             return False
     
-    def _domain_to_model(self, profile: Profile) -> ProfileModel:
+    async def get_user_roles(self, user_data: Dict[str, Any]) -> List[str]:
         """
-        Convert a domain Profile entity to a ProfileModel.
+        Extract user roles from user data.
         
         Args:
-            profile: Domain Profile entity
+            user_data: User information from token
             
         Returns:
-            ProfileModel: SQLAlchemy model instance
+            List of user roles
         """
-        return ProfileModel(
-            profile_id=profile.profile_id,
-            user_id=profile.user_id,
-            display_name=profile.display_name,
-            profile_photo=profile.profile_photo,
-            bio=profile.bio,
-            location=profile.location,
-            timezone=profile.timezone,
-            language=profile.language,
-            theme=profile.theme,
-            notification_enabled=profile.notification_enabled,
-            created_at=profile.created_at,
-            updated_at=profile.updated_at,
-        )
+        try:
+            # Check app_metadata for roles
+            app_metadata = user_data.get('app_metadata', {})
+            roles = app_metadata.get('roles', [])
+            
+            if isinstance(roles, str):
+                roles = [roles]
+            elif not isinstance(roles, list):
+                roles = []
+            
+            # Default role if no roles specified
+            if not roles:
+                roles = ['user']
+            
+            return roles
+            
+        except Exception as e:
+            logger.error(f"Error extracting user roles: {e}")
+            return ['user']  # Default role
     
-    def _model_to_domain(self, profile_model: ProfileModel) -> Profile:
+    async def check_email_verified(self, user_data: Dict[str, Any]) -> bool:
         """
-        Convert a ProfileModel to a domain Profile entity.
+        Check if user's email is verified.
         
         Args:
-            profile_model: SQLAlchemy model instance
+            user_data: User information from token
             
         Returns:
-            Profile: Domain Profile entity
+            True if email is verified, False otherwise
         """
-        return Profile(
-            profile_id=profile_model.profile_id,
-            user_id=profile_model.user_id,
-            display_name=profile_model.display_name,
-            profile_photo=profile_model.profile_photo,
-            bio=profile_model.bio,
-            location=profile_model.location,
-            timezone=profile_model.timezone,
-            language=profile_model.language,
-            theme=profile_model.theme,
-            notification_enabled=profile_model.notification_enabled,
-            created_at=profile_model.created_at,
-            updated_at=profile_model.updated_at,
-        )
+        return user_data.get('email_verified', False)
     
-    def _update_model_from_domain(self, profile_model: ProfileModel, profile: Profile) -> None:
+    async def is_user_active(self, user_data: Dict[str, Any]) -> bool:
         """
-        Update a ProfileModel instance with data from a domain Profile entity.
+        Check if user account is active.
         
         Args:
-            profile_model: SQLAlchemy model instance to update
-            profile: Domain Profile entity with new data
+            user_data: User information from token
+            
+        Returns:
+            True if user is active, False otherwise
         """
-        profile_model.display_name = profile.display_name
-        profile_model.profile_photo = profile.profile_photo
-        profile_model.bio = profile.bio
-        profile_model.location = profile.location
-        profile_model.timezone = profile.timezone
-        profile_model.language = profile.language
-        profile_model.theme = profile.theme
-        profile_model.notification_enabled = profile.notification_enabled
-        profile_model.updated_at = profile.updated_at
+        try:
+            # Check if user is banned or suspended
+            app_metadata = user_data.get('app_metadata', {})
+            
+            # Check for ban status
+            if app_metadata.get('banned', False):
+                return False
+            
+            # Check for suspension
+            suspended_until = app_metadata.get('suspended_until')
+            if suspended_until:
+                suspension_date = datetime.fromisoformat(suspended_until.replace('Z', '+00:00'))
+                if datetime.now(suspension_date.tzinfo) < suspension_date:
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error checking user active status: {e}")
+            return True  # Default to active if check fails
+    
+    def get_service_stats(self) -> Dict[str, Any]:
+        """
+        Get authentication service statistics.
+        
+        Returns:
+            Dictionary with service statistics
+        """
+        return {
+            'service_name': 'SupabaseAuthService',
+            'provider': 'Supabase Auth',
+            'initialized': self._client is not None,
+            'features': [
+                'jwt_verification',
+                'token_refresh',
+                'user_session_management',
+                'oauth_support',
+                'email_verification',
+                'role_based_access'
+            ]
+        }
+
+
+# Global service instance
+_supabase_auth_service: Optional[SupabaseAuthService] = None
+
+
+def get_supabase_auth_service() -> SupabaseAuthService:
+    """
+    Get the global Supabase authentication service instance.
+    
+    Returns:
+        SupabaseAuthService: Global service instance
+    """
+    global _supabase_auth_service
+    
+    if _supabase_auth_service is None:
+        _supabase_auth_service = SupabaseAuthService()
+        logger.debug("Created SupabaseAuthService instance")
+    
+    return _supabase_auth_service
+
+
+# Export the service class and factory function
+__all__ = [
+    'SupabaseAuthService',
+    'get_supabase_auth_service'
+]

@@ -718,6 +718,241 @@ def create_integration_event(
     """Create an integration event with standard structure."""
     return IntegrationEvent(event_type, integration_name, **kwargs)
 
+# Event handler registry for managing handlers
+class EventHandlerRegistry:
+    """
+    Registry for managing event handlers.
+    
+    Provides centralized registration, lookup, and management
+    of event handlers throughout the application.
+    """
+    
+    def __init__(self):
+        """Initialize event handler registry."""
+        self._handlers: Dict[str, List[EventHandler]] = {}
+        self._handler_metadata: Dict[str, Dict[str, Any]] = {}
+    
+    def register_handler(
+        self, 
+        event_type: str, 
+        handler: EventHandler,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Register an event handler for specific event type.
+        
+        Args:
+            event_type: Event type to handle
+            handler: Event handler instance
+            metadata: Optional handler metadata
+        """
+        if event_type not in self._handlers:
+            self._handlers[event_type] = []
+        
+        # Avoid duplicate registrations
+        if handler not in self._handlers[event_type]:
+            self._handlers[event_type].append(handler)
+            
+            # Store handler metadata
+            handler_key = f"{event_type}:{handler.get_handler_name()}"
+            self._handler_metadata[handler_key] = metadata or {}
+            
+            logger.info(f"Registered handler {handler.get_handler_name()} for event type: {event_type}")
+    
+    def unregister_handler(self, event_type: str, handler: EventHandler) -> bool:
+        """
+        Unregister an event handler.
+        
+        Args:
+            event_type: Event type
+            handler: Event handler to remove
+            
+        Returns:
+            True if handler was removed, False if not found
+        """
+        if event_type in self._handlers:
+            try:
+                self._handlers[event_type].remove(handler)
+                
+                # Remove metadata
+                handler_key = f"{event_type}:{handler.get_handler_name()}"
+                self._handler_metadata.pop(handler_key, None)
+                
+                # Clean up empty handler lists
+                if not self._handlers[event_type]:
+                    del self._handlers[event_type]
+                
+                logger.info(f"Unregistered handler {handler.get_handler_name()} for event type: {event_type}")
+                return True
+            except ValueError:
+                pass
+        
+        return False
+    
+    def get_handlers(self, event_type: str) -> List[EventHandler]:
+        """
+        Get handlers for specific event type.
+        
+        Args:
+            event_type: Event type to get handlers for
+            
+        Returns:
+            List of event handlers
+        """
+        return self._handlers.get(event_type, []).copy()
+    
+    def get_all_handlers(self) -> Dict[str, List[EventHandler]]:
+        """
+        Get all registered handlers.
+        
+        Returns:
+            Dictionary mapping event types to handler lists
+        """
+        return {
+            event_type: handlers.copy() 
+            for event_type, handlers in self._handlers.items()
+        }
+    
+    def get_handler_metadata(self, event_type: str, handler_name: str) -> Dict[str, Any]:
+        """
+        Get metadata for specific handler.
+        
+        Args:
+            event_type: Event type
+            handler_name: Handler name
+            
+        Returns:
+            Handler metadata dictionary
+        """
+        handler_key = f"{event_type}:{handler_name}"
+        return self._handler_metadata.get(handler_key, {}).copy()
+    
+    def has_handlers(self, event_type: str) -> bool:
+        """
+        Check if event type has registered handlers.
+        
+        Args:
+            event_type: Event type to check
+            
+        Returns:
+            True if handlers are registered
+        """
+        return event_type in self._handlers and len(self._handlers[event_type]) > 0
+    
+    def get_registered_event_types(self) -> List[str]:
+        """
+        Get list of all registered event types.
+        
+        Returns:
+            List of event types with registered handlers
+        """
+        return list(self._handlers.keys())
+    
+    def get_handler_count(self, event_type: Optional[str] = None) -> int:
+        """
+        Get count of registered handlers.
+        
+        Args:
+            event_type: Optional specific event type
+            
+        Returns:
+            Number of handlers (total or for specific event type)
+        """
+        if event_type:
+            return len(self._handlers.get(event_type, []))
+        
+        return sum(len(handlers) for handlers in self._handlers.values())
+    
+    def clear_handlers(self, event_type: Optional[str] = None) -> None:
+        """
+        Clear handlers.
+        
+        Args:
+            event_type: Optional specific event type to clear
+        """
+        if event_type:
+            if event_type in self._handlers:
+                # Remove metadata for this event type
+                for handler in self._handlers[event_type]:
+                    handler_key = f"{event_type}:{handler.get_handler_name()}"
+                    self._handler_metadata.pop(handler_key, None)
+                
+                del self._handlers[event_type]
+                logger.info(f"Cleared all handlers for event type: {event_type}")
+        else:
+            self._handlers.clear()
+            self._handler_metadata.clear()
+            logger.info("Cleared all event handlers")
+    
+    def get_registry_stats(self) -> Dict[str, Any]:
+        """
+        Get registry statistics.
+        
+        Returns:
+            Statistics about registered handlers
+        """
+        stats = {
+            'total_event_types': len(self._handlers),
+            'total_handlers': self.get_handler_count(),
+            'event_types': list(self._handlers.keys()),
+            'handlers_per_type': {
+                event_type: len(handlers) 
+                for event_type, handlers in self._handlers.items()
+            }
+        }
+        
+        return stats
+
+
+# Global event handler registry instance
+_global_event_handler_registry: Optional[EventHandlerRegistry] = None
+
+
+def get_event_handler_registry() -> EventHandlerRegistry:
+    """
+    Get the global event handler registry instance.
+    
+    Returns:
+        Global EventHandlerRegistry instance
+    """
+    global _global_event_handler_registry
+    
+    if _global_event_handler_registry is None:
+        _global_event_handler_registry = EventHandlerRegistry()
+        logger.debug("Created global event handler registry")
+    
+    return _global_event_handler_registry
+
+
+def register_event_handler(
+    event_type: str, 
+    handler: EventHandler,
+    metadata: Optional[Dict[str, Any]] = None
+) -> None:
+    """
+    Register an event handler globally.
+    
+    Args:
+        event_type: Event type to handle
+        handler: Event handler instance
+        metadata: Optional handler metadata
+    """
+    registry = get_event_handler_registry()
+    registry.register_handler(event_type, handler, metadata)
+
+
+def get_event_handlers(event_type: str) -> List[EventHandler]:
+    """
+    Get handlers for specific event type.
+    
+    Args:
+        event_type: Event type
+        
+    Returns:
+        List of event handlers
+    """
+    registry = get_event_handler_registry()
+    return registry.get_handlers(event_type)
 
 # Export all event classes and utilities
 __all__ = [

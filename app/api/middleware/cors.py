@@ -15,8 +15,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 from starlette.responses import Response as StarletteResponse
+from app.shared.config.settings import get_settings
 
 import os
+
+# Get application settings
+settings = get_settings()
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +38,12 @@ class PlantCareCORSMiddleware(BaseHTTPMiddleware):
         allowed_headers: Optional[List[str]] = None,
         exposed_headers: Optional[List[str]] = None,
         allow_credentials: bool = True,
-        max_age: int = 600
+        max_age: int = 600,
     ):
         super().__init__(app)
-        
+        self.settings = settings
         # Get environment from environment variable or default to development
-        self.environment = os.getenv('ENVIRONMENT', 'development').lower()
-        
+        self.environment = self.settings.ENVIRONMENT.lower()        
         # Default CORS configuration based on environment
         self.allowed_origins = allowed_origins or self._get_default_origins()
         self.allowed_methods = allowed_methods or [
@@ -80,7 +83,8 @@ class PlantCareCORSMiddleware(BaseHTTPMiddleware):
         logger.info(f"CORS Middleware initialized with {len(self.allowed_origins)} allowed origins")
         if self.log_cors_requests:
             logger.debug(f"Allowed origins: {self.allowed_origins}")
-    
+
+
     def _get_default_origins(self) -> List[str]:
         """
         Get default allowed origins based on environment
@@ -88,7 +92,7 @@ class PlantCareCORSMiddleware(BaseHTTPMiddleware):
         Returns:
             List of allowed origin URLs
         """
-        if self.settings.environment == "production":
+        if self.settings.ENVIRONMENT == "production":
             return [
                 "https://plantcare.app",
                 "https://www.plantcare.app",
