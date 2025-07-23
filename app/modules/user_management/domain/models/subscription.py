@@ -10,7 +10,7 @@
 
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from enum import Enum
 from pydantic import BaseModel, validator, Field
 
@@ -487,3 +487,42 @@ class Subscription(BaseModel):
                 data.pop(field, None)
         
         return data
+
+class SubscriptionPlan(Enum):
+    """
+    Subscription plan types from Core Doc 1.3.
+    Defines available subscription tiers with their business rules.
+    """
+    FREE = "free"
+    PREMIUM_MONTHLY = "premium_monthly"
+    PREMIUM_YEARLY = "premium_yearly"
+
+    @property
+    def is_premium(self) -> bool:
+        """Check if this is a premium plan."""
+        return self in [self.PREMIUM_MONTHLY, self.PREMIUM_YEARLY]
+
+    @property
+    def billing_cycle_days(self) -> Optional[int]:
+        """Get billing cycle in days for the plan."""
+        cycle_map = {
+            self.FREE: None,
+            self.PREMIUM_MONTHLY: 30,
+            self.PREMIUM_YEARLY: 365
+        }
+        return cycle_map[self]
+
+    @property
+    def display_name(self) -> str:
+        """Get human-readable display name."""
+        names = {
+            self.FREE: "Free Plan",
+            self.PREMIUM_MONTHLY: "Premium Monthly",
+            self.PREMIUM_YEARLY: "Premium Yearly"
+        }
+        return names[self]
+
+    @classmethod
+    def premium_plans(cls) -> List['SubscriptionPlan']:
+        """Get all premium plan types."""
+        return [cls.PREMIUM_MONTHLY, cls.PREMIUM_YEARLY]

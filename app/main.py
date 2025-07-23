@@ -51,6 +51,8 @@ from app.modules.user_management.infrastructure.database.user_repository_impl im
 from app.modules.user_management.domain.repositories.profile_repository import ProfileRepository
 # (Assuming you have a similar implementation file for the profile repository)
 from app.modules.user_management.infrastructure.database.profile_repository_impl import ProfileRepositoryImpl
+from app.modules.user_management.infrastructure.database.subscription_repository_impl import SubscriptionRepository
+
 from datetime import datetime
 from fastapi.routing import APIRoute
 import inspect
@@ -102,7 +104,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         from app.shared.infrastructure.database.session import initialize_sessions
         await initialize_sessions()
         logger.info("✅ Session manager initialized")
-        
+
         # Initialize Redis cache
         from app.shared.infrastructure.cache.redis_client import init_redis
         await init_redis()
@@ -217,6 +219,7 @@ def create_application() -> FastAPI:
     # give it an instance of UserRepositoryImpl."
     app.dependency_overrides[UserRepository] = UserRepositoryImpl
     app.dependency_overrides[ProfileRepository] = ProfileRepositoryImpl # Add this for profiles too
+    app.dependency_overrides[SubscriptionRepository] = SubscriptionRepository # Add this for profiles too
 
 
     # =========================================================================
