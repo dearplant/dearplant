@@ -88,7 +88,6 @@ from app.shared.core.security import create_access_token, verify_password
 from app.shared.core.exceptions import AuthenticationError, ValidationError,RateLimitError
 from passlib.context import CryptContext
 
-logger = logging.getLogger(__name__)
 
 # Rate limiting configuration
 limiter = Limiter(key_func=get_remote_address)
@@ -99,6 +98,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Create router
 auth_router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @auth_router.post(
     "/register",
@@ -118,7 +118,7 @@ auth_router = APIRouter()
 async def register(
     request: Request,
     registration_data: RegisterRequest,
-    create_user_handler: CreateUserCommandHandler = Depends(),
+    create_user_handler: CreateUserCommandHandler = Depends(CreateUserCommandHandler),
 ) -> LoginResponse:
     """
     Register a new user account following Core Doc 1.1 specifications.

@@ -36,6 +36,7 @@ Each handler:
 - Implements caching strategies for performance
 - Handles error cases gracefully
 """
+from fastapi import Depends
 
 import logging
 from datetime import datetime
@@ -69,8 +70,8 @@ class GetUserQueryHandler:
     
     def __init__(
         self,
-        user_service: UserService,
-        user_repository: UserRepository,
+        user_service: UserService = Depends(),
+        user_repository: UserRepository = Depends(),
     ):
         """
         Initialize the get user query handler.
@@ -249,9 +250,9 @@ class GetProfileQueryHandler:
     
     def __init__(
         self,
-        profile_service: ProfileService,
-        profile_repository: ProfileRepository,
-        user_repository: UserRepository,
+        profile_service: ProfileService = Depends(),
+        profile_repository: ProfileRepository =Depends(),
+        user_repository: UserRepository =Depends(),
     ):
         """
         Initialize the get profile query handler.

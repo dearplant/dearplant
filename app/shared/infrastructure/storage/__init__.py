@@ -62,7 +62,7 @@ import logging
 from pathlib import Path
 
 # Import storage components
-from .supabase_storage import SupabaseStorageClient, get_supabase_storage
+from .supabase_storage import SupabaseStorageClient, get_storage_client as get_supabase_storage
 from .file_manager import FileManager, get_file_manager
 
 logger = logging.getLogger(__name__)

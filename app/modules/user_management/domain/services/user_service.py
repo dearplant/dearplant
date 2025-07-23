@@ -1,506 +1,609 @@
 # 📄 File: app/modules/user_management/domain/services/user_service.py
 # 🧭 Purpose (Layman Explanation): 
-# Handles complex user account operations like creating accounts, managing subscriptions, and coordinating user data across the system
+# This file contains the business logic for managing users - creating accounts, updating profiles,
+# and handling all the rules about what users can and cannot do with their accounts.
 # 🧪 Purpose (Technical Summary): 
-# Domain service implementing core user business logic, lifecycle management, and coordination between User, Profile, and Subscription entities
+# Domain service implementing core user management business logic including user creation,
+# profile updates, validation rules, and user lifecycle management with proper separation of concerns.
 # 🔗 Dependencies: 
-# Domain models, repositories, events, app.shared.core.security
+# User domain models, repositories, events, validation logic
 # 🔄 Connected Modules / Calls From: 
-# Application command handlers, API endpoints, authentication service
+# Application command handlers, API endpoints, authentication services
 
+from fastapi import Depends
 import logging
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timezone
+from uuid import UUID, uuid4
+from datetime import datetime, timedelta
+ 
 
-from ..models.user import User, UserRole, UserStatus, SubscriptionTier
+from ..models.user import User
 from ..models.profile import Profile
-from ..models.subscription import Subscription, PlanType, PaymentMethod
 from ..repositories.user_repository import UserRepository
 from ..repositories.profile_repository import ProfileRepository
 from ..events.user_events import (
-    UserCreated,
-    UserUpdated,
+    UserCreated, 
+    UserUpdated, 
     UserDeleted,
-    UserSubscriptionChanged
+    UserProfileUpdated
 )
-from app.shared.events.publisher import EventPublisher
+from .....shared.core.exceptions import (
+    ValidationError,
+    AuthenticationError,
+    AuthorizationError,
+    NotFoundError,
+    DuplicateResourceError
+)
 
 logger = logging.getLogger(__name__)
 
 
 class UserService:
     """
-    Domain service for core user business operations.
+    Domain service for user management business logic.
     
-    Implements business logic for user lifecycle management following
-    core doc specifications from User Management Module (1.1, 1.2, 1.3).
-    
-    Responsibilities:
-    - User creation and validation
-    - User lifecycle management
-    - Subscription management coordination
-    - Business rule enforcement
-    - Domain event publishing
+    IMPORTANT: This is a domain service class used for business logic only.
+    It should NEVER be used as a FastAPI response model or Pydantic field type.
+    Always return DTOs/schemas from API endpoints, not domain service instances.
     """
     
     def __init__(
         self,
-        user_repository: UserRepository,
-        profile_repository: ProfileRepository,
-        event_publisher: EventPublisher
+        user_repository: UserRepository = Depends(),
+        profile_repository: ProfileRepository = Depends(),
     ):
         self.user_repository = user_repository
         self.profile_repository = profile_repository
-        self.event_publisher = event_publisher
+    
+    # =========================================================================
+    # USER CREATION AND LIFECYCLE
+    # =========================================================================
     
     async def create_user(
         self,
         email: str,
-        password: str,
+        password_hash: str,
         display_name: Optional[str] = None,
         provider: str = "email",
-        provider_id: Optional[str] = None,
-        registration_ip: Optional[str] = None,
-        start_trial: bool = False
+        provider_id: Optional[str] = None
     ) -> User:
         """
-        Create a new user with full initialization.
-        
-        Implements user registration from core doc Authentication functionality.
-        Business rules:
-        - Email must be unique
-        - Password must meet security requirements
-        - Creates associated profile and subscription
-        - Publishes UserCreated event
+        Create a new user with business rule validation.
         
         Args:
-            email: User email address
-            password: Plain text password
+            email: User's email address
+            password_hash: Hashed password
             display_name: Optional display name
-            provider: Authentication provider (email/google/apple)
+            provider: Authentication provider
             provider_id: External provider ID
-            registration_ip: Registration IP address
-            start_trial: Whether to start free trial
             
         Returns:
-            Created User entity
+            User: Created user domain model
             
         Raises:
-            ValueError: If email already exists or validation fails
+            DuplicateResourceError: If email already exists
+            ValidationError: If input validation fails
         """
-        logger.info(f"Creating new user with email: {email}")
+        try:
+            # Validate email format
+            if not self._is_valid_email(email):
+                raise ValidationError(
+                    "Invalid email format",
+                    field="email",
+                    value=email
+                )
+            
+            # Check if user already exists
+            existing_user = await self.user_repository.get_by_email(email)
+            if existing_user:
+                raise DuplicateResourceError(
+                    "User with this email already exists",
+                    resource_type="user",
+                    field="email",
+                    value=email
+                )
+            
+            # Create user domain model
+            user = User(
+                user_id=str(uuid4()),
+                email=email.lower().strip(),
+                password_hash=password_hash,
+                provider=provider,
+                provider_id=provider_id,
+                email_verified=False,
+                account_locked=False,
+                login_attempts=0,
+                created_at=datetime.utcnow(),
+                last_login=None
+            )
+            
+            # Save user
+            saved_user = await self.user_repository.create(user)
+            
+            # Create default profile
+            await self._create_default_profile(
+                user_id=saved_user.user_id,
+                display_name=display_name or email.split('@')[0]
+            )
+            
+            # Publish domain event
+            await self._publish_event(UserCreated(
+                user_id=saved_user.user_id,
+                email=saved_user.email,
+                provider=provider
+            ))
+            
+            logger.info(f"User created successfully: {saved_user.user_id}")
+            return saved_user
+            
+        except Exception as e:
+            logger.error(f"Failed to create user: {e}")
+            if isinstance(e, (DuplicateResourceError, ValidationError)):
+                raise
+            raise ValidationError(f"User creation failed: {str(e)}")
+    
+    async def get_user_by_id(self, user_id: str) -> Optional[User]:
+        """
+        Get user by ID with business logic validation.
         
-        # 1. Validate email uniqueness
-        existing_user = await self.user_repository.get_by_email(email)
-        if existing_user:
-            raise ValueError(f"User with email {email} already exists")
+        Args:
+            user_id: User identifier
+            
+        Returns:
+            Optional[User]: User if found, None otherwise
+        """
+        try:
+            if not self._is_valid_uuid(user_id):
+                raise ValidationError(
+                    "Invalid user ID format",
+                    field="user_id",
+                    value=user_id
+                )
+            
+            user = await self.user_repository.get_by_id(user_id)
+            
+            if user:
+                logger.debug(f"User retrieved: {user_id}")
+            else:
+                logger.debug(f"User not found: {user_id}")
+            
+            return user
+            
+        except Exception as e:
+            logger.error(f"Failed to get user by ID: {e}")
+            if isinstance(e, ValidationError):
+                raise
+            return None
+    
+    async def get_user_by_email(self, email: str) -> Optional[User]:
+        """
+        Get user by email with validation.
         
-        # 2. Validate password requirements
-        self._validate_password_requirements(password)
-        
-        # 3. Create user entity
-        user = User.create_new_user(
-            email=email,
-            password=password,
-            display_name=display_name,
-            provider=provider,
-            provider_id=provider_id,
-            registration_ip=registration_ip
-        )
-        
-        # 4. Save user
-        created_user = await self.user_repository.create(user)
-        
-        # 5. Create associated profile
-        profile = Profile.create_new_profile(
-            user_id=created_user.user_id,
-            display_name=display_name or email.split('@')[0]
-        )
-        await self.profile_repository.create(profile)
-        
-        # 6. Create subscription
-        subscription = Subscription.create_free_subscription(created_user.user_id)
-        if start_trial:
-            subscription.start_free_trial()
-        
-        # Note: Subscription repository would be injected in real implementation
-        # await self.subscription_repository.create(subscription)
-        
-        # 7. Publish domain event
-        event = UserCreated(
-            user_id=created_user.user_id,
-            email=created_user.email,
-            display_name=display_name,
-            provider=provider,
-            registration_ip=registration_ip,
-            subscription_tier=created_user.subscription_tier,
-            trial_started=start_trial
-        )
-        await self.event_publisher.publish(event)
-        
-        logger.info(f"Successfully created user: {created_user.user_id}")
-        return created_user
+        Args:
+            email: User's email address
+            
+        Returns:
+            Optional[User]: User if found, None otherwise
+        """
+        try:
+            if not self._is_valid_email(email):
+                raise ValidationError(
+                    "Invalid email format",
+                    field="email",
+                    value=email
+                )
+            
+            user = await self.user_repository.get_by_email(email.lower().strip())
+            
+            if user:
+                logger.debug(f"User found by email: {email}")
+            else:
+                logger.debug(f"User not found by email: {email}")
+            
+            return user
+            
+        except Exception as e:
+            logger.error(f"Failed to get user by email: {e}")
+            if isinstance(e, ValidationError):
+                raise
+            return None
+    
+    # =========================================================================
+    # USER UPDATES AND MANAGEMENT
+    # =========================================================================
     
     async def update_user(
         self,
         user_id: str,
         updates: Dict[str, Any],
-        updated_by: Optional[str] = None
+        updated_by: str
     ) -> User:
         """
-        Update user information with validation and event publishing.
+        Update user with business rule validation.
         
         Args:
-            user_id: User to update
-            updates: Dictionary of field updates
-            updated_by: Who performed the update
+            user_id: User identifier
+            updates: Fields to update
+            updated_by: ID of user making the update
             
         Returns:
-            Updated User entity
+            User: Updated user
             
         Raises:
-            ValueError: If user not found or validation fails
+            NotFoundError: If user not found
+            AuthorizationError: If update not authorized
+            ValidationError: If validation fails
         """
-        logger.info(f"Updating user: {user_id}")
-        
-        # 1. Get existing user
-        user = await self.user_repository.get_by_id(user_id)
-        if not user:
-            raise ValueError(f"User {user_id} not found")
-        
-        # 2. Store previous values for event
-        previous_values = {}
-        
-        # 3. Apply updates with validation
-        for field, value in updates.items():
-            if hasattr(user, field):
-                previous_values[field] = getattr(user, field)
-                
-                # Special validation for certain fields
-                if field == "email":
-                    await self._validate_email_uniqueness(value, user_id)
-                elif field == "password":
-                    self._validate_password_requirements(value)
-                    user.update_password(value)
-                    continue
-                
-                setattr(user, field, value)
-        
-        # 4. Update timestamp
-        user.updated_at = datetime.now(timezone.utc)
-        
-        # 5. Save user
-        updated_user = await self.user_repository.update(user)
-        
-        # 6. Publish domain event
-        if updates:  # Only publish if there were actual updates
-            event = UserUpdated(
+        try:
+            # Get existing user
+            user = await self.user_repository.get_by_id(user_id)
+            if not user:
+                raise NotFoundError(
+                    "User not found",
+                    resource_type="user",
+                    resource_id=user_id
+                )
+            
+            # Validate authorization (user can update self, admin can update anyone)
+            if not await self._can_update_user(user_id, updated_by):
+                raise AuthorizationError(
+                    "Not authorized to update this user",
+                    resource_type="user",
+                    resource_id=user_id
+                )
+            
+            # Validate and apply updates
+            validated_updates = await self._validate_user_updates(updates)
+            
+            # Update user
+            updated_user = await self.user_repository.update(user_id, validated_updates)
+            
+            # Publish domain event
+            await self._publish_event(UserUpdated(
                 user_id=user_id,
-                updated_fields=updates,
-                previous_values=previous_values
-            )
-            await self.event_publisher.publish(event)
-        
-        logger.info(f"Successfully updated user: {user_id}")
-        return updated_user
+                updated_fields=list(validated_updates.keys()),
+                updated_by=updated_by
+            ))
+            
+            logger.info(f"User updated successfully: {user_id}")
+            return updated_user
+            
+        except Exception as e:
+            logger.error(f"Failed to update user: {e}")
+            if isinstance(e, (NotFoundError, AuthorizationError, ValidationError)):
+                raise
+            raise ValidationError(f"User update failed: {str(e)}")
     
     async def delete_user(
         self,
         user_id: str,
-        deletion_reason: Optional[str] = None,
+        deleted_by: str,
         soft_delete: bool = True
-    ) -> None:
+    ) -> bool:
         """
-        Delete user account with proper cleanup.
+        Delete user (soft delete by default).
         
         Args:
-            user_id: User to delete
-            deletion_reason: Reason for deletion
-            soft_delete: Whether to soft delete (default) or hard delete
+            user_id: User identifier
+            deleted_by: ID of user performing deletion
+            soft_delete: Whether to soft delete or hard delete
+            
+        Returns:
+            bool: True if successful
             
         Raises:
-            ValueError: If user not found
+            NotFoundError: If user not found
+            AuthorizationError: If deletion not authorized
         """
-        logger.info(f"Deleting user: {user_id} (soft_delete: {soft_delete})")
-        
-        # 1. Get user
-        user = await self.user_repository.get_by_id(user_id)
-        if not user:
-            raise ValueError(f"User {user_id} not found")
-        
-        # 2. Perform deletion
-        if soft_delete:
-            user.soft_delete()
-            await self.user_repository.update(user)
-        else:
-            await self.user_repository.delete(user_id)
-        
-        # 3. Publish domain event
-        event = UserDeleted(
-            user_id=user_id,
-            email=user.email,
-            deletion_reason=deletion_reason,
-            soft_delete=soft_delete
-        )
-        await self.event_publisher.publish(event)
-        
-        logger.info(f"Successfully deleted user: {user_id}")
+        try:
+            # Get existing user
+            user = await self.user_repository.get_by_id(user_id)
+            if not user:
+                raise NotFoundError(
+                    "User not found",
+                    resource_type="user",
+                    resource_id=user_id
+                )
+            
+            # Validate authorization
+            if not await self._can_delete_user(user_id, deleted_by):
+                raise AuthorizationError(
+                    "Not authorized to delete this user",
+                    resource_type="user",
+                    resource_id=user_id
+                )
+            
+            # Perform deletion
+            if soft_delete:
+                # Soft delete - mark as deleted
+                await self.user_repository.update(user_id, {
+                    "account_locked": True,
+                    "deleted_at": datetime.utcnow()
+                })
+            else:
+                # Hard delete - remove from database
+                await self.user_repository.delete(user_id)
+            
+            # Publish domain event
+            await self._publish_event(UserDeleted(
+                user_id=user_id,
+                deleted_by=deleted_by,
+                soft_delete=soft_delete
+            ))
+            
+            logger.info(f"User deleted successfully: {user_id} (soft={soft_delete})")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to delete user: {e}")
+            if isinstance(e, (NotFoundError, AuthorizationError)):
+                raise
+            raise ValidationError(f"User deletion failed: {str(e)}")
     
-    async def upgrade_user_subscription(
+    # =========================================================================
+    # AUTHENTICATION SUPPORT
+    # =========================================================================
+    
+    async def verify_user_credentials(
+        self,
+        email: str,
+        password_hash: str
+    ) -> Optional[User]:
+        """
+        Verify user credentials for authentication.
+        
+        Args:
+            email: User's email
+            password_hash: Hashed password to verify
+            
+        Returns:
+            Optional[User]: User if credentials valid, None otherwise
+        """
+        try:
+            user = await self.get_user_by_email(email)
+            
+            if not user:
+                return None
+            
+            # Check if account is locked
+            if user.account_locked:
+                raise AuthenticationError(
+                    "Account is locked. Please contact support.",
+                    user_id=user.user_id
+                )
+            
+            # Verify password hash
+            if user.password_hash != password_hash:
+                # Increment failed login attempts
+                await self._increment_login_attempts(user.user_id)
+                return None
+            
+            # Reset login attempts on successful auth
+            await self._reset_login_attempts(user.user_id)
+            
+            # Update last login
+            await self.user_repository.update(user.user_id, {
+                "last_login": datetime.utcnow()
+            })
+            
+            logger.info(f"User credentials verified: {user.user_id}")
+            return user
+            
+        except Exception as e:
+            logger.error(f"Failed to verify credentials: {e}")
+            if isinstance(e, AuthenticationError):
+                raise
+            return None
+    
+    async def lock_user_account(
         self,
         user_id: str,
-        plan_type: PlanType,
-        payment_method: PaymentMethod,
-        external_subscription_id: Optional[str] = None
-    ) -> User:
+        reason: str,
+        locked_by: str
+    ) -> bool:
         """
-        Upgrade user to premium subscription.
-        
-        Implements plan upgrade from core doc Subscription Management functionality.
+        Lock user account for security reasons.
         
         Args:
-            user_id: User to upgrade
-            plan_type: Premium plan type
-            payment_method: Payment method used
-            external_subscription_id: External payment provider subscription ID
+            user_id: User identifier
+            reason: Reason for locking
+            locked_by: ID of user/system locking account
             
         Returns:
-            Updated User entity
-            
-        Raises:
-            ValueError: If user not found or invalid plan
+            bool: True if successful
         """
-        logger.info(f"Upgrading user {user_id} to {plan_type}")
-        
-        # 1. Get user
-        user = await self.user_repository.get_by_id(user_id)
-        if not user:
-            raise ValueError(f"User {user_id} not found")
-        
-        # 2. Validate upgrade
-        if plan_type == PlanType.FREE:
-            raise ValueError("Cannot upgrade to free plan")
-        
-        # 3. Store previous subscription info
-        previous_tier = user.subscription_tier
-        
-        # 4. Update user subscription
-        user.upgrade_subscription(plan_type.value)
-        updated_user = await self.user_repository.update(user)
-        
-        # 5. Publish subscription change event
-        event = UserSubscriptionChanged(
-            user_id=user_id,
-            previous_tier=previous_tier,
-            new_tier=plan_type.value,
-            previous_status="active",
-            new_status="active",
-            change_reason="upgrade"
-        )
-        await self.event_publisher.publish(event)
-        
-        logger.info(f"Successfully upgraded user {user_id} to {plan_type}")
-        return updated_user
+        try:
+            await self.user_repository.update(user_id, {
+                "account_locked": True,
+                "lock_reason": reason,
+                "locked_at": datetime.utcnow(),
+                "locked_by": locked_by
+            })
+            
+            logger.warning(f"User account locked: {user_id} - {reason}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to lock user account: {e}")
+            return False
     
-    async def downgrade_user_subscription(
+    # =========================================================================
+    # PROFILE MANAGEMENT
+    # =========================================================================
+    
+    async def _create_default_profile(
         self,
         user_id: str,
-        reason: Optional[str] = None
-    ) -> User:
-        """
-        Downgrade user to free subscription.
-        
-        Args:
-            user_id: User to downgrade
-            reason: Reason for downgrade
+        display_name: str
+    ) -> Profile:
+        """Create default profile for new user."""
+        try:
+            profile = Profile(
+                profile_id=str(uuid4()),
+                user_id=user_id,
+                display_name=display_name,
+                bio=None,
+                profile_photo=None,
+                location=None,
+                timezone="UTC",
+                language="en",
+                theme="auto",
+                notification_enabled=True,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
             
-        Returns:
-            Updated User entity
-        """
-        logger.info(f"Downgrading user {user_id} to free")
-        
-        # 1. Get user
-        user = await self.user_repository.get_by_id(user_id)
-        if not user:
-            raise ValueError(f"User {user_id} not found")
-        
-        # 2. Store previous subscription info
-        previous_tier = user.subscription_tier
-        
-        # 3. Downgrade user
-        user.downgrade_to_free()
-        updated_user = await self.user_repository.update(user)
-        
-        # 4. Publish subscription change event
-        event = UserSubscriptionChanged(
-            user_id=user_id,
-            previous_tier=previous_tier,
-            new_tier=SubscriptionTier.FREE,
-            previous_status="active",
-            new_status="active",
-            change_reason=reason or "downgrade"
-        )
-        await self.event_publisher.publish(event)
-        
-        logger.info(f"Successfully downgraded user {user_id} to free")
-        return updated_user
-    
-    async def activate_user(self, user_id: str) -> User:
-        """
-        Activate user account.
-        
-        Args:
-            user_id: User to activate
+            saved_profile = await self.profile_repository.create(profile)
+            logger.debug(f"Default profile created for user: {user_id}")
+            return saved_profile
             
-        Returns:
-            Updated User entity
-        """
-        user = await self.user_repository.get_by_id(user_id)
-        if not user:
-            raise ValueError(f"User {user_id} not found")
-        
-        user.activate()
-        return await self.user_repository.update(user)
+        except Exception as e:
+            logger.error(f"Failed to create default profile: {e}")
+            raise ValidationError(f"Profile creation failed: {str(e)}")
     
-    async def deactivate_user(self, user_id: str) -> User:
-        """
-        Deactivate user account.
+    # =========================================================================
+    # VALIDATION HELPERS
+    # =========================================================================
+    
+    def _is_valid_email(self, email: str) -> bool:
+        """Validate email format."""
+        import re
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        return bool(re.match(pattern, email))
+    
+    def _is_valid_uuid(self, uuid_string: str) -> bool:
+        """Validate UUID format."""
+        try:
+            UUID(uuid_string)
+            return True
+        except ValueError:
+            return False
+    
+    async def _validate_user_updates(
+        self, 
+        updates: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Validate user update data."""
+        validated = {}
         
-        Args:
-            user_id: User to deactivate
+        # Validate allowed fields
+        allowed_fields = {
+            'email', 'password_hash', 'email_verified', 
+            'account_locked', 'provider', 'provider_id'
+        }
+        
+        for field, value in updates.items():
+            if field not in allowed_fields:
+                raise ValidationError(
+                    f"Field '{field}' is not allowed for update",
+                    field=field
+                )
             
-        Returns:
-            Updated User entity
-        """
-        user = await self.user_repository.get_by_id(user_id)
-        if not user:
-            raise ValueError(f"User {user_id} not found")
-        
-        user.deactivate()
-        return await self.user_repository.update(user)
-    
-    async def suspend_user(self, user_id: str, reason: Optional[str] = None) -> User:
-        """
-        Suspend user account.
-        
-        Args:
-            user_id: User to suspend
-            reason: Suspension reason
+            # Field-specific validation
+            if field == 'email' and not self._is_valid_email(value):
+                raise ValidationError(
+                    "Invalid email format",
+                    field="email",
+                    value=value
+                )
             
-        Returns:
-            Updated User entity
-        """
-        user = await self.user_repository.get_by_id(user_id)
-        if not user:
-            raise ValueError(f"User {user_id} not found")
+            validated[field] = value
         
-        user.suspend()
-        updated_user = await self.user_repository.update(user)
-        
-        logger.warning(f"User {user_id} suspended. Reason: {reason}")
-        return updated_user
+        return validated
     
-    async def get_user_by_id(self, user_id: str) -> Optional[User]:
-        """
-        Get user by ID.
+    async def _can_update_user(self, user_id: str, updater_id: str) -> bool:
+        """Check if user can be updated by updater."""
+        # User can update themselves
+        if user_id == updater_id:
+            return True
         
-        Args:
-            user_id: User ID to find
+        # Check if updater is admin (implement admin check logic)
+        # For now, only allow self-updates
+        return False
+    
+    async def _can_delete_user(self, user_id: str, deleter_id: str) -> bool:
+        """Check if user can be deleted by deleter."""
+        # User can delete themselves
+        if user_id == deleter_id:
+            return True
+        
+        # Check if deleter is admin
+        # For now, only allow self-deletion
+        return False
+    
+    # =========================================================================
+    # LOGIN ATTEMPT MANAGEMENT
+    # =========================================================================
+    
+    async def _increment_login_attempts(self, user_id: str) -> None:
+        """Increment failed login attempts and lock if necessary."""
+        try:
+            user = await self.user_repository.get_by_id(user_id)
+            if not user:
+                return
             
-        Returns:
-            User entity or None if not found
-        """
-        return await self.user_repository.get_by_id(user_id)
-    
-    async def get_user_by_email(self, email: str) -> Optional[User]:
-        """
-        Get user by email.
-        
-        Args:
-            email: Email to find
+            new_attempts = user.login_attempts + 1
+            updates = {"login_attempts": new_attempts}
             
-        Returns:
-            User entity or None if not found
-        """
-        return await self.user_repository.get_by_email(email)
-    
-    async def get_users_by_status(
-        self,
-        status: UserStatus,
-        limit: int = 100,
-        offset: int = 0
-    ) -> List[User]:
-        """
-        Get users by status with pagination.
-        
-        Args:
-            status: User status to filter by
-            limit: Maximum number of users to return
-            offset: Number of users to skip
+            # Lock account after 5 failed attempts
+            if new_attempts >= 5:
+                updates.update({
+                    "account_locked": True,
+                    "lock_reason": "Too many failed login attempts",
+                    "locked_at": datetime.utcnow()
+                })
+                logger.warning(f"Account locked due to failed attempts: {user_id}")
             
-        Returns:
-            List of User entities
-        """
-        return await self.user_repository.get_by_status(status, limit, offset)
-    
-    async def get_premium_users(
-        self,
-        limit: int = 100,
-        offset: int = 0
-    ) -> List[User]:
-        """
-        Get premium users with pagination.
-        
-        Args:
-            limit: Maximum number of users to return
-            offset: Number of users to skip
+            await self.user_repository.update(user_id, updates)
             
-        Returns:
-            List of premium User entities
-        """
-        premium_tiers = [SubscriptionTier.PREMIUM_MONTHLY, SubscriptionTier.PREMIUM_YEARLY]
-        return await self.user_repository.get_by_subscription_tiers(premium_tiers, limit, offset)
+        except Exception as e:
+            logger.error(f"Failed to increment login attempts: {e}")
     
-    # Private helper methods
+    async def _reset_login_attempts(self, user_id: str) -> None:
+        """Reset failed login attempts on successful login."""
+        try:
+            await self.user_repository.update(user_id, {
+                "login_attempts": 0
+            })
+        except Exception as e:
+            logger.error(f"Failed to reset login attempts: {e}")
     
-    def _validate_password_requirements(self, password: str) -> None:
-        """
-        Validate password meets security requirements.
-        
-        Args:
-            password: Password to validate
-            
-        Raises:
-            ValueError: If password doesn't meet requirements
-        """
-        if len(password) < 8:
-            raise ValueError("Password must be at least 8 characters long")
-        
-        if not any(c.isupper() for c in password):
-            raise ValueError("Password must contain at least one uppercase letter")
-        
-        if not any(c.islower() for c in password):
-            raise ValueError("Password must contain at least one lowercase letter")
-        
-        if not any(c.isdigit() for c in password):
-            raise ValueError("Password must contain at least one digit")
-        
-        # Check for common weak passwords
-        weak_passwords = ["password", "12345678", "qwerty", "admin"]
-        if password.lower() in weak_passwords:
-            raise ValueError("Password is too common and not secure")
+    # =========================================================================
+    # EVENT PUBLISHING
+    # =========================================================================
     
-    async def _validate_email_uniqueness(self, email: str, exclude_user_id: Optional[str] = None) -> None:
-        """
-        Validate email is unique (excluding specified user).
+    async def _publish_event(self, event) -> None:
+        """Publish domain event."""
+        try:
+            # In a real implementation, this would publish to an event bus
+            # For now, just log the event
+            logger.info(f"Domain event published: {event.__class__.__name__}")
+        except Exception as e:
+            logger.error(f"Failed to publish event: {e}")
+
+
+# =============================================================================
+# DEPENDENCY INJECTION HELPERS
+# =============================================================================
+
+def get_user_service(
+    user_repository: UserRepository,
+    profile_repository: ProfileRepository
+) -> UserService:
+    """
+    Factory function to create UserService instance.
+    
+    This function should be used with FastAPI's Depends() for dependency injection.
+    NEVER return UserService directly from API endpoints as response models.
+    
+    Args:
+        user_repository: User repository implementation
+        profile_repository: Profile repository implementation
         
-        Args:
-            email: Email to validate
-            exclude_user_id: User ID to exclude from check
-            
-        Raises:
-            ValueError: If email already exists
-        """
-        existing_user = await self.user_repository.get_by_email(email)
-        if existing_user and existing_user.user_id != exclude_user_id:
-            raise ValueError(f"User with email {email} already exists")
+    Returns:
+        UserService: Configured user service instance
+    """
+    return UserService(
+        user_repository=user_repository,
+        profile_repository=profile_repository
+    )

@@ -11,6 +11,7 @@
 # All domain modules, background jobs, notification system, audit logging, external integrations
 
 import asyncio
+from fastapi import Depends
 import json
 import logging
 from typing import Any, Dict, List, Optional, Type, Callable, Set, Union
@@ -410,6 +411,10 @@ class RedisEventPersistence(EventPersistence):
             logger.error(f"Failed to cleanup old events: {e}")
             return 0
 
+# This function tells FastAPI how to create an EventPersistence object.
+# It returns the in-memory version for now.
+def get_event_persistence() -> EventPersistence:
+    return MemoryEventPersistence()
 
 class EventPublisher:
     """
@@ -417,8 +422,8 @@ class EventPublisher:
     """
     
     def __init__(self, 
-                 registry: Optional[EnhancedEventHandlerRegistry] = None,
-                 persistence: Optional[EventPersistence] = None,
+                 registry: Optional[EnhancedEventHandlerRegistry] = Depends(lambda: enhanced_event_registry),
+                persistence: EventPersistence = Depends(get_event_persistence),
                  default_config: Optional[EventDeliveryConfig] = None):
         self.registry = registry or enhanced_event_registry
         self.persistence = persistence or MemoryEventPersistence()

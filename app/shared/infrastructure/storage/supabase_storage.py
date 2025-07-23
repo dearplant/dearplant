@@ -35,8 +35,8 @@ from supabase.lib.client_options import ClientOptions
 
 from app.shared.config.settings import get_settings
 from app.shared.core.exceptions import (
-    StorageError,
-    FileNotFoundError,
+    FileStorageError,
+    NotFoundError,
     FileTooLargeError,
     InvalidFileTypeError,
     StorageQuotaExceededError
@@ -425,7 +425,7 @@ class SupabaseStorageClient:
             if isinstance(response, bytes):
                 return response
             else:
-                raise FileNotFoundError(f"File not found: {file_path}")
+                raise NotFoundError(f"File not found: {file_path}")
                 
         except Exception as e:
             logger.error(f"File download failed: {e}")
@@ -688,6 +688,7 @@ async def upload_profile_photo(
     )
 
 
+
 async def upload_growth_journal_photo(
     file_data: bytes,
     filename: str,
@@ -705,3 +706,33 @@ async def upload_growth_journal_photo(
         optimize_image=True,
         generate_thumbnail=True
     )
+
+
+# Delete profile photo(s) for a given profile ID (user_id)
+async def delete_profile_photo(profile_id: str) -> bool:
+    """
+    Delete profile photo from Supabase Storage for a given profile ID.
+    
+    Args:
+        profile_id: UUID string of the profile
+    
+    Returns:
+        True if deleted successfully, False otherwise
+    """
+    try:
+        client = await get_storage_client()
+        profile_path_prefix = f"profiles/{profile_id}"
+        
+        # List all files for the profile (handle multiple photos or thumbs)
+        files = await client.list_files(profile_path_prefix)
+        success = True
+        
+        for file in files:
+            deleted = await client.delete_file(file['path'])
+            if not deleted:
+                success = False
+        
+        return success
+    except Exception as e:
+        logger.error(f"Failed to delete profile photo for {profile_id}: {e}")
+        return False

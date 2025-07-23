@@ -62,8 +62,7 @@ from .events.user_events import (
     UserEmailVerified,
     UserPasswordChanged,
     UserSubscriptionChanged
-)
-
+) 
 __all__ = [
     # Domain Models
     "User",

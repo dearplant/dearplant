@@ -46,11 +46,11 @@ if TYPE_CHECKING:
     from app.modules.user_management.application.queries.get_profile import GetProfileQuery
     
     # Handlers
-    from app.modules.user_management.application.handlers.command_handlers import (
-        CreateUserCommandHandler,
-        UpdateProfileCommandHandler,
-        DeleteUserCommandHandler,
-    )
+    # from app.modules.user_management.application.handlers.command_handlers import (
+    #     CreateUserCommandHandler,
+    #     UpdateProfileCommandHandler,
+    #     DeleteUserCommandHandler,
+    # )
     from app.modules.user_management.application.handlers.query_handlers import (
         GetUserQueryHandler,
         GetProfileQueryHandler,

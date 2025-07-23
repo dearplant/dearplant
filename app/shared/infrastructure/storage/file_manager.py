@@ -44,7 +44,7 @@ from app.shared.core.exceptions import (
     InvalidFileTypeError,
     FileTooLargeError,
     FileIntegrityError,
-    StorageError
+    FileStorageError
 )
 from app.shared.infrastructure.storage.supabase_storage import (
     get_storage_client,

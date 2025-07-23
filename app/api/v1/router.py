@@ -133,44 +133,30 @@ async def api_v1_status() -> JSONResponse:
 # MODULE ROUTER INCLUDES - USER MANAGEMENT MODULE (ACTIVE)
 # =========================================================================
 
+
 # 🎉 USER MANAGEMENT MODULE - FULLY IMPLEMENTED AND ACTIVE
 logger.info("🚀 Loading User Management module routers...")
 
-try:
-    # Authentication endpoints
-    from app.modules.user_management.presentation.api.v1.auth import auth_router
-    api_v1_router.include_router(
-        auth_router,
-        prefix=ROUTE_PREFIXES["auth"],
-        tags=["Authentication"]
-    )
-    logger.info("✅ Authentication router loaded")
-    
-    # User management endpoints  
-    from app.modules.user_management.presentation.api.v1.users import users_router
-    api_v1_router.include_router(
-        users_router,
-        prefix=ROUTE_PREFIXES["users"],
-        tags=["Users"]
-    )
-    logger.info("✅ Users router loaded")
-    
-    # Profile management endpoints
-    from app.modules.user_management.presentation.api.v1.profiles import profiles_router
-    api_v1_router.include_router(
-        profiles_router,
-        prefix="/profiles",  # Custom prefix for profiles
-        tags=["Profiles"]
-    )
-    logger.info("✅ Profiles router loaded")
-    
-    logger.info("🌟 User Management module successfully activated!")
-    
-except ImportError as e:
-    logger.error(f"❌ Failed to load User Management routers: {e}")
-    logger.warning("🔄 User Management module routers not available - check implementation")
-except Exception as e:
-    logger.error(f"❌ Unexpected error loading User Management module: {e}")
+for name, prefix, import_path, tag in [
+    ("Authentication", ROUTE_PREFIXES["auth"], "app.modules.user_management.presentation.api.v1.auth:auth_router", "Authentication"),
+    ("Users", ROUTE_PREFIXES["users"], "app.modules.user_management.presentation.api.v1.users:users_router", "Users"),
+    ("Profiles", "/profiles", "app.modules.user_management.presentation.api.v1.profiles:profiles_router", "Profiles")
+]:
+    try:
+        module_path, router_name = import_path.split(":")
+        mod = __import__(module_path, fromlist=[router_name])
+        router = getattr(mod, router_name)
+        api_v1_router.include_router(router, prefix=prefix, tags=[tag])
+        logger.info(f"✅ {name} router loaded")
+    except ImportError as e:
+        logger.error(f"❌ Failed to load {name} router: {e}")
+        logger.warning(f"🔄 {name} module router not available - check implementation")
+    except Exception as e:
+        import traceback
+        logger.error(f"❌ Unexpected error loading {name} module: {e}")
+        traceback.print_exc()
+
+logger.info("🌟 User Management module router setup complete!")
 
 
 # =========================================================================

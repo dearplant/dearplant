@@ -43,6 +43,25 @@ from app.api.middleware.cors import PlantCareCORSMiddleware
 from app.api.middleware.localization import LocalizationMiddleware
 from app.api.v1.router import api_v1_router
 from app.api.v1.health import health_router
+from fastapi.routing import APIRoute
+import inspect
+
+# Monkey patch to log invalid response_model usage
+original_route_init = APIRoute.__init__
+
+# def logged_route_init(self, *args, **kwargs):
+#     response_model = kwargs.get('response_model', None)
+#     endpoint = kwargs.get('endpoint', None)
+
+#     if response_model and not hasattr(response_model, '__fields__'):
+#         print("🚨 INVALID response_model detected:", response_model)
+#         print("👉 Used by endpoint:", getattr(endpoint, '__name__', str(endpoint)))
+#         print("📍 Traceback:")
+#         for frame in inspect.stack()[1:5]:
+#             print(f"  {frame.filename}:{frame.lineno} - {frame.function}")
+#     return original_route_init(self, *args, **kwargs)
+
+# APIRoute.__init__ = logged_route_init
 
 # Get application settings
 settings = get_settings()

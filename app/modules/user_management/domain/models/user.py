@@ -106,7 +106,7 @@ class User(BaseModel):
         use_enum_values = True
         validate_assignment = True
         arbitrary_types_allowed = True
-        allow_population_by_field_name = True
+        populate_by_name = True
         
     @validator('email')
     def validate_email(cls, v):

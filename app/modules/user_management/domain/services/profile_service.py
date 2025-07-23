@@ -8,6 +8,7 @@
 # 🔄 Connected Modules / Calls From: 
 # Application command handlers, API profile endpoints, community features, weather integration
 
+from fastapi import Depends
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
@@ -42,9 +43,9 @@ class ProfileService:
     
     def __init__(
         self,
-        profile_repository: ProfileRepository,
-        user_repository: UserRepository,
-        event_publisher: EventPublisher
+        profile_repository: ProfileRepository = Depends() ,
+        user_repository: UserRepository = Depends(),
+        event_publisher: EventPublisher = Depends()
     ):
         self.profile_repository = profile_repository
         self.user_repository = user_repository

@@ -104,7 +104,8 @@ users_router = APIRouter()
 )
 async def get_current_user_info(
     current_user: dict = Depends(get_current_active_user),
-    get_user_handler: GetUserQueryHandler = Depends(),
+    # ❗️ FIX: The type hint is removed, and the class is passed directly to Depends.
+    get_user_handler: GetUserQueryHandler = Depends(GetUserQueryHandler),
 ) -> UserResponse:
     """
     Get current authenticated user's information.
@@ -148,8 +149,7 @@ async def get_current_user_info(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve user information"
         )
-
-
+    
 @users_router.get(
     "/{user_id}",
     response_model=UserResponse,

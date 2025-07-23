@@ -272,7 +272,7 @@ async def update_profile(
     profile_id: UUID,
     update_data: ProfileUpdateRequest,
     current_user: dict = Depends(get_current_active_user),
-    update_profile_handler: UpdateProfileCommandHandler = Depends(),
+    update_profile_handler: UpdateProfileCommandHandler = Depends(UpdateProfileCommandHandler),
 ) -> ProfileResponse:
     """
     Update profile information following Core Doc 1.2 specifications.

@@ -8,6 +8,7 @@
 # 🔄 Connected Modules / Calls From: 
 # Application command handlers, API auth endpoints, authentication middleware
 
+from fastapi import Depends
 import logging
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime, timezone
@@ -50,8 +51,8 @@ class AuthService:
     
     def __init__(
         self,
-        user_repository: UserRepository,
-        event_publisher: EventPublisher
+        user_repository: UserRepository = Depends(),
+        event_publisher: EventPublisher =Depends()
     ):
         self.user_repository = user_repository
         self.event_publisher = event_publisher
