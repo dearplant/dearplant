@@ -19,6 +19,8 @@ from ..repositories.profile_repository import ProfileRepository
 from ..repositories.user_repository import UserRepository
 from ..events.user_events import UserProfileUpdated
 from app.shared.events.publisher import EventPublisher
+from app.shared.utils.validators import ValidationResult
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -603,6 +605,38 @@ class ProfileService:
         """
         return await self.profile_repository.search_profiles(query, limit, offset)
     
+    async def validate_new_profile(self, profile_data: Any) -> ValidationResult:
+        """
+        Validate new profile data during registration.
+
+        Args:
+            profile_data: Profile dict or Profile object (Pydantic)
+
+        Returns:
+            ValidationResult: An object with the validation status and cleaned data.
+        """
+        if not isinstance(profile_data, dict):
+            profile_data = profile_data.dict()
+
+        # --- Validation Checks ---
+        if not profile_data.get("display_name"):
+            return ValidationResult(is_valid=False, errors=["Display name is required"])
+
+        if len(profile_data.get("bio", "")) > 500:
+            return ValidationResult(is_valid=False, errors=["Bio must not exceed 500 characters"])
+
+        # --- Apply Defaults ---
+        if profile_data.get("timezone") is None:
+            profile_data["timezone"] = "UTC" # Set a default if None
+
+        if profile_data.get("language") is None:
+            profile_data["language"] = "en"
+
+        logger.info(f"profile data validated: {profile_data}")
+
+        # Return a successful ValidationResult object
+        return ValidationResult(is_valid=True, errors=[], warnings=[])
+
     # Private helper methods
     
     async def _publish_profile_updated_event(

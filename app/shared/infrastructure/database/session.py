@@ -72,6 +72,7 @@ class DatabaseSessionManager:
             DatabaseError: If session creation fails
             TransactionError: If transaction management fails
         """
+        logging.info(f"self._initialized {self._initialized} self._session_factory {self._session_factory}")
         if not self._initialized or self._session_factory is None:
             raise DatabaseError("Session manager not initialized")
         
@@ -183,6 +184,7 @@ session_manager = DatabaseSessionManager()
 
 async def initialize_sessions() -> None:
     """Initialize the global database session manager."""
+    print("🔥 initialize_sessions() called")
     await session_manager.initialize()
 
 
@@ -219,7 +221,7 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
             logger.error(f"Unexpected error in database session dependency: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Internal database error"
+                detail=f"Internal database error: {str(e)}"
             )
 
 

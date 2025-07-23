@@ -90,7 +90,7 @@ class UserDTO(BaseModel):
         description="Account creation date",
         example="2024-01-15T10:30:00Z"
     )
-    last_login: Optional[datetime] = Field(
+    last_login_at: Optional[datetime] = Field(
         default=None,
         description="Last login timestamp",
         example="2024-01-20T14:25:00Z"
@@ -100,7 +100,7 @@ class UserDTO(BaseModel):
         description="Email verification status",
         example=True
     )
-    login_attempts: int = Field(
+    failed_login_attempts: int = Field(
         ...,
         ge=0,
         description="Failed login attempt counter",
@@ -110,6 +110,11 @@ class UserDTO(BaseModel):
         ...,
         description="Account lock status",
         example=False
+    )
+    account_locked_at: Optional[datetime] = Field(
+        ...,
+        description="Account lock status",
+        example="2024-01-15T10:30:00Z"
     )
     provider: UserProvider = Field(
         ...,
@@ -148,14 +153,15 @@ class UserDTO(BaseModel):
                 "user_id": "123e4567-e89b-12d3-a456-426614174000",
                 "email": "john.doe@example.com",
                 "created_at": "2024-01-15T10:30:00Z",
-                "last_login": "2024-01-20T14:25:00Z",
+                "last_login_at": "2024-01-20T14:25:00Z",
                 "email_verified": True,
-                "login_attempts": 0,
-                "account_locked": False,
+                "failed_login_attempts": 0,
+                "account_locked_at": "2024-01-20T14:25:00Z",
                 "provider": "email",
                 "provider_id": None,
                 "reset_token": None,
-                "reset_token_expires": None
+                "reset_token_expires": None,
+                "account_locked": False
             }
         }
     
@@ -193,11 +199,11 @@ class UserDTO(BaseModel):
         Returns:
             bool: True if logged in within the specified days
         """
-        if not self.last_login:
+        if not self.last_login_at:
             return False
         
         cutoff_date = datetime.utcnow() - timedelta(days=days)
-        return self.last_login > cutoff_date
+        return self.last_login_at > cutoff_date
 
 
 class CreateUserDTO(BaseModel):
@@ -302,7 +308,7 @@ class UserResponseDTO(BaseModel):
         description="Account creation date",
         example="2024-01-15T10:30:00Z"
     )
-    last_login: Optional[datetime] = Field(
+    last_login_at: Optional[datetime] = Field(
         default=None,
         description="Last login timestamp",
         example="2024-01-20T14:25:00Z"
@@ -324,7 +330,7 @@ class UserResponseDTO(BaseModel):
     )
     
     # Optional fields based on access level
-    login_attempts: Optional[int] = Field(
+    failed_login_attempts: Optional[int] = Field(
         default=None,
         description="Failed login attempts (self/admin only)",
         example=0
@@ -333,6 +339,12 @@ class UserResponseDTO(BaseModel):
         default=None,
         description="Account locked status (admin only)",
         example=False
+    )
+    
+    account_locked_at: Optional[datetime] = Field(
+        default=None,
+        description="Last login timestamp",
+        example="2024-01-20T14:25:00Z"
     )
     
     class Config:
@@ -346,11 +358,11 @@ class UserResponseDTO(BaseModel):
                 "user_id": "123e4567-e89b-12d3-a456-426614174000",
                 "email": "user@example.com",
                 "created_at": "2024-01-15T10:30:00Z",
-                "last_login": "2024-01-20T14:25:00Z",
+                "last_login_at": "2024-01-20T14:25:00Z",
                 "email_verified": True,
                 "provider": "email",
                 "status": "active",
-                "login_attempts": 0,
+                "failed_login_attempts": 0,
                 "account_locked": False
             }
         }
@@ -380,7 +392,7 @@ class UserResponseDTO(BaseModel):
             "user_id": user.user_id,
             "email": user.email,
             "created_at": user.created_at,
-            "last_login": user.last_login,
+            "last_login_at": user.last_login_at,
             "email_verified": user.email_verified,
             "provider": UserProvider(user.provider),
             "status": status,
@@ -388,7 +400,7 @@ class UserResponseDTO(BaseModel):
         
         # Add fields based on access level
         if access_level in ["self", "admin"]:
-            response_data["login_attempts"] = user.login_attempts
+            response_data["failed_login_attempts"] = user.failed_login_attempts
         
         if access_level == "admin":
             response_data["account_locked"] = user.account_locked
@@ -482,7 +494,7 @@ class UserSecurityDTO(BaseModel):
         description="User identifier",
         example="123e4567-e89b-12d3-a456-426614174000"
     )
-    login_attempts: int = Field(
+    failed_login_attempts: int = Field(
         ...,
         ge=0,
         description="Failed login attempt counter",
@@ -513,6 +525,12 @@ class UserSecurityDTO(BaseModel):
         description="Recent security events",
         example=[]
     )
+
+    account_locked_at: Optional[datetime] = Field(
+        default=None,
+        description="Account locked status",
+        example="2024-01-10T09:15:00Z"
+    )
     
     class Config:
         """Pydantic configuration."""
@@ -522,7 +540,7 @@ class UserSecurityDTO(BaseModel):
         schema_extra = {
             "example": {
                 "user_id": "123e4567-e89b-12d3-a456-426614174000",
-                "login_attempts": 0,
+                "failed_login_attempts": 0,
                 "account_locked": False,
                 "has_reset_token": False,
                 "reset_token_expires": None,

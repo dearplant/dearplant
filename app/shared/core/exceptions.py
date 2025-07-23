@@ -944,3 +944,61 @@ class StorageQuotaExceededError(PlantCareException):
             details=details,
             error_code="STORAGE_QUOTA_EXCEEDED"
         )
+class RepositoryError(PlantCareException):
+    """
+    Exception raised for repository/database operation failures.
+    Used when database operations fail at the repository layer.
+    """
+    
+    def __init__(
+        self,
+        message: str = "Repository operation failed",
+        operation: Optional[str] = None,
+        entity: Optional[str] = None,
+        constraint: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None
+    ):
+        if not details:
+            details = {}
+        
+        if operation:
+            details["operation"] = operation
+        if entity:
+            details["entity"] = entity
+        if constraint:
+            details["constraint"] = constraint
+        
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details=details,
+            error_code="REPOSITORY_ERROR"
+        )
+
+class TransactionError(PlantCareException):
+    """
+    Exception raised when a database transaction fails.
+    Used to wrap commit/rollback errors in DB sessions.
+    """
+    
+    def __init__(
+        self,
+        message: str = "Database transaction failed",
+        operation: Optional[str] = None,
+        entity: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None
+    ):
+        if not details:
+            details = {}
+
+        if operation:
+            details["operation"] = operation
+        if entity:
+            details["entity"] = entity
+
+        super().__init__(
+            message=message,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details=details,
+            error_code="TRANSACTION_ERROR"
+        )

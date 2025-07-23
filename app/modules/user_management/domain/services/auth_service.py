@@ -106,7 +106,7 @@ class AuthService:
                 login_ip=login_ip,
                 user_agent=user_agent,
                 failure_reason="account_locked",
-                attempt_count=user.login_attempts
+                attempt_count=user.failed_login_attempts
             )
             return None, None
         
@@ -118,7 +118,7 @@ class AuthService:
                 login_ip=login_ip,
                 user_agent=user_agent,
                 failure_reason="account_inactive",
-                attempt_count=user.login_attempts
+                attempt_count=user.failed_login_attempts
             )
             return None, None
         
@@ -138,7 +138,7 @@ class AuthService:
                 login_ip=login_ip,
                 user_agent=user_agent,
                 failure_reason="invalid_password",
-                attempt_count=user.login_attempts
+                attempt_count=user.failed_login_attempts
             )
             return None, None
         
@@ -516,7 +516,7 @@ class AuthService:
             user_id=user.user_id,
             email=user.email,
             lock_reason="failed_logins",
-            failed_attempts=user.login_attempts,
+            failed_attempts=user.failed_login_attempts,
             lock_ip=lock_ip,
             unlock_instructions_sent=True  # Would be handled by event handler
         )

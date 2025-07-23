@@ -304,7 +304,7 @@ class UserSearchRequest(BaseModel):
     # Sorting
     sort_by: str = Field(
         default="created_at",
-        description="Sort field (created_at, email, last_login)",
+        description="Sort field (created_at, email, last_login_at)",
         example="created_at"
     )
     sort_order: str = Field(
@@ -336,7 +336,7 @@ class UserSearchRequest(BaseModel):
     @validator('sort_by')
     def validate_sort_field(cls, v):
         """Validate sort field options."""
-        allowed_fields = ["created_at", "email", "last_login", "display_name"]
+        allowed_fields = ["created_at", "email", "last_login_at", "display_name"]
         if v not in allowed_fields:
             raise ValueError(f"Sort field must be one of: {', '.join(allowed_fields)}")
         return v
@@ -376,7 +376,7 @@ class UserResponse(BaseModel):
         description="Account creation date",
         example="2024-01-15T10:30:00Z"
     )
-    last_login: Optional[datetime] = Field(
+    last_login_at: Optional[datetime] = Field(
         default=None,
         description="Last login timestamp",
         example="2024-01-20T14:25:00Z"
@@ -398,7 +398,7 @@ class UserResponse(BaseModel):
     )
     
     # Optional fields based on access level
-    login_attempts: Optional[int] = Field(
+    failed_login_attempts: Optional[int] = Field(
         default=None,
         description="Failed login attempts (self/admin only)",
         example=0
@@ -420,11 +420,11 @@ class UserResponse(BaseModel):
                 "user_id": "123e4567-e89b-12d3-a456-426614174000",
                 "email": "user@example.com",
                 "created_at": "2024-01-15T10:30:00Z",
-                "last_login": "2024-01-20T14:25:00Z",
+                "last_login_at": "2024-01-20T14:25:00Z",
                 "email_verified": True,
                 "provider": "email",
                 "status": "active",
-                "login_attempts": 0,
+                "failed_login_attempts": 0,
                 "account_locked": False
             }
         }
@@ -454,7 +454,7 @@ class UserResponse(BaseModel):
             "user_id": user_data["user_id"],
             "email": user_data["email"],
             "created_at": user_data["created_at"],
-            "last_login": user_data.get("last_login"),
+            "last_login_at": user_data.get("last_login_at"),
             "email_verified": user_data.get("email_verified", False),
             "provider": UserProvider(user_data.get("provider", "email")),
             "status": status,
@@ -462,7 +462,7 @@ class UserResponse(BaseModel):
         
         # Add fields based on access level
         if access_level in ["self", "admin"]:
-            response_data["login_attempts"] = user_data.get("login_attempts", 0)
+            response_data["failed_login_attempts"] = user_data.get("failed_login_attempts", 0)
         
         if access_level == "admin":
             response_data["account_locked"] = user_data.get("account_locked", False)
@@ -564,7 +564,7 @@ class UserSecurityResponse(BaseModel):
         description="User's unique identifier",
         example="123e4567-e89b-12d3-a456-426614174000"
     )
-    login_attempts: int = Field(
+    failed_login_attempts: int = Field(
         ...,
         ge=0,
         description="Failed login attempt counter",
@@ -585,7 +585,7 @@ class UserSecurityResponse(BaseModel):
         description="Reset token expiration",
         example=None
     )
-    last_login: Optional[datetime] = Field(
+    last_login_at: Optional[datetime] = Field(
         default=None,
         description="Last successful login",
         example="2024-01-20T14:25:00Z"
@@ -593,6 +593,11 @@ class UserSecurityResponse(BaseModel):
     created_at: datetime = Field(
         ...,
         description="Account creation date",
+        example="2024-01-15T10:30:00Z"
+    )
+    account_locked_at: datetime = Field(
+        ...,
+        description="Account Logged date",
         example="2024-01-15T10:30:00Z"
     )
     email_verified: bool = Field(
@@ -620,15 +625,16 @@ class UserSecurityResponse(BaseModel):
         schema_extra = {
             "example": {
                 "user_id": "123e4567-e89b-12d3-a456-426614174000",
-                "login_attempts": 0,
+                "failed_login_attempts": 0,
                 "account_locked": False,
                 "has_reset_token": False,
                 "reset_token_expires": None,
-                "last_login": "2024-01-20T14:25:00Z",
+                "last_login_at": "2024-01-20T14:25:00Z",
                 "created_at": "2024-01-15T10:30:00Z",
                 "email_verified": True,
                 "provider": "email",
-                "security_events": []
+                "security_events": [],
+                "account_locked_at": "2024-01-20T14:25:00Z",
             }
         }
 
@@ -771,6 +777,11 @@ class AccountUnlockResponse(BaseModel):
         description="Unlock timestamp",
         example="2024-01-20T15:30:00Z"
     )
+    account_locked_at: datetime = Field(
+        ...,
+        description="lock timestamp",
+        example="2024-01-20T15:30:00Z"
+    )
     unlocked_by: UUID = Field(
         ...,
         description="Admin user who performed unlock",
@@ -793,6 +804,7 @@ class AccountUnlockResponse(BaseModel):
                 "account_locked": False,
                 "login_attempts_reset": True,
                 "unlocked_at": "2024-01-20T15:30:00Z",
+                "account_locked_at": "2024-01-20T15:30:00Z",
                 "unlocked_by": "987fcdeb-51a2-43d1-9876-ba0987654321",
                 "message": "Account unlocked successfully"
             }

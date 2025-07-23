@@ -282,30 +282,34 @@ class CreateUserCommand(BaseModel):
             tuple: (User domain entity data, Profile domain entity data)
         """
         # Generate UUIDs for new entities
-        user_id = uuid4()
-        profile_id = uuid4()
+        user_id_obj = uuid4()
+        profile_id_obj = uuid4()
         now = datetime.utcnow()
         
         # User entity data (Core Doc 1.1)
         user_data = {
-            "user_id": user_id,
+            # ✅ FIX: Convert the UUID object to a string
+            "user_id": str(user_id_obj),
             "email": self.email,
             "password_hash": None,  # Will be set by auth service
             "created_at": now,
-            "last_login": None,
+            "last_login_at": None,
             "email_verified": False,  # Requires verification
             "reset_token": None,
             "reset_token_expires": None,
-            "login_attempts": 0,
-            "account_locked": False,
+            "failed_login_attempts": 0,
+            "account_locked": None,
             "provider": self.provider,
             "provider_id": self.provider_id,
+            "account_locked":False,
+            "notification_enabled":self.notification_enabled
         }
         
         # Profile entity data (Core Doc 1.2)
         profile_data = {
-            "profile_id": profile_id,
-            "user_id": user_id,
+            # ✅ FIX: Convert both UUID objects to strings
+            "profile_id": str(profile_id_obj),
+            "user_id": str(user_id_obj),
             "display_name": self.display_name,
             "profile_photo": None,  # Set during photo upload
             "bio": self.bio,
@@ -316,6 +320,7 @@ class CreateUserCommand(BaseModel):
             "notification_enabled": self.notification_enabled,
             "created_at": now,
             "updated_at": now,
+            "experience_level": "beginner"
         }
         
         return user_data, profile_data

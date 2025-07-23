@@ -55,6 +55,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from datetime import datetime
 
 from app.modules.user_management.application.commands.delete_user import DeleteUserCommand
 from app.modules.user_management.application.handlers.command_handlers import DeleteUserCommandHandler
@@ -532,6 +533,7 @@ async def unlock_user_account(
             account_locked=False,
             login_attempts_reset=True,
             unlocked_at=datetime.utcnow(),
+            account_locked_at=datetime.utcnow(),
             unlocked_by=current_admin["user_id"],
             message="Account unlocked successfully",
         )
@@ -598,11 +600,11 @@ async def get_user_security(
         
         return UserSecurityResponse(
             user_id=user_id,
-            login_attempts=user_data.get("login_attempts", 0),
+            failed_login_attempts=user_data.get("failed_login_attempts", 0),
             account_locked=user_data.get("account_locked", False),
             has_reset_token=user_data.get("reset_token") is not None,
             reset_token_expires=user_data.get("reset_token_expires"),
-            last_login=user_data.get("last_login"),
+            last_login_at=user_data.get("last_login_at"),
             created_at=user_data.get("created_at"),
             email_verified=user_data.get("email_verified", False),
             provider=user_data.get("provider", "email"),

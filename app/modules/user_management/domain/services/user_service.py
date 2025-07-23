@@ -11,6 +11,7 @@
 # Application command handlers, API endpoints, authentication services
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 from typing import Optional, Dict, Any, List
 from uuid import UUID, uuid4
@@ -19,8 +20,13 @@ from datetime import datetime, timedelta
 
 from ..models.user import User
 from ..models.profile import Profile
+from ..models.subscription import Subscription
 from ..repositories.user_repository import UserRepository
 from ..repositories.profile_repository import ProfileRepository
+from app.modules.user_management.domain.repositories.user_repository import UserRepository
+from app.modules.user_management.domain.repositories.subscription_repository import SubscriptionRepository
+from app.shared.core.exceptions import ValidationError, RepositoryError
+
 from ..events.user_events import (
     UserCreated, 
     UserUpdated, 
@@ -37,6 +43,11 @@ from .....shared.core.exceptions import (
 
 logger = logging.getLogger(__name__)
 
+# A simple helper class for the validation result
+class ValidationResult:
+    def __init__(self, is_valid: bool = True, error_message: str = None):
+        self.is_valid = is_valid
+        self.error_message = error_message
 
 class UserService:
     """
@@ -51,14 +62,29 @@ class UserService:
         self,
         user_repository: UserRepository = Depends(),
         profile_repository: ProfileRepository = Depends(),
+        subscription_repository: SubscriptionRepository = Depends(),
+
     ):
         self.user_repository = user_repository
         self.profile_repository = profile_repository
+        self.subscription_repository = subscription_repository
     
     # =========================================================================
     # USER CREATION AND LIFECYCLE
     # =========================================================================
     
+    async def validate_new_user(self, user: User) -> ValidationResult:
+        """
+        Validates a new user object before it is created.
+        """
+        # You can add more complex validation logic here later.
+        if not self._is_valid_email(user.email):
+            return ValidationResult(is_valid=False, error_message="Invalid email format")
+
+        # All checks passed
+        logger.debug(f"User validation successful for email: {user.email}")
+        return ValidationResult(is_valid=True)
+
     async def create_user(
         self,
         email: str,
@@ -112,9 +138,9 @@ class UserService:
                 provider_id=provider_id,
                 email_verified=False,
                 account_locked=False,
-                login_attempts=0,
+                failed_login_attempts=0,
                 created_at=datetime.utcnow(),
-                last_login=None
+                last_login_at=None
             )
             
             # Save user
@@ -383,7 +409,7 @@ class UserService:
             
             # Update last login
             await self.user_repository.update(user.user_id, {
-                "last_login": datetime.utcnow()
+                "last_login_at": datetime.utcnow()
             })
             
             logger.info(f"User credentials verified: {user.user_id}")
@@ -462,6 +488,71 @@ class UserService:
             raise ValidationError(f"Profile creation failed: {str(e)}")
     
     # =========================================================================
+    # SUBSCRIBTION MANAGEMENT
+    # =========================================================================
+
+    async def create_free_trial_subscription(
+        self,
+        user_id: UUID,
+        session: AsyncSession
+    ) -> Subscription:
+        """
+        Create a free trial subscription for a new user.
+        
+        According to core documentation: "Free trial activation (7 days)"
+        
+        Args:
+            user_id: User UUID
+            session: Database session
+            
+        Returns:
+            SubscriptionModel: Created subscription with active trial
+            
+        Raises:
+            RepositoryError: If subscription creation fails
+            ValidationError: If user already has a subscription
+        """
+        from datetime import datetime, timezone, timedelta
+        from uuid import uuid4
+        
+        try:
+            # Check if user already has a subscription
+            existing_subscription = await self.subscription_repository.get_by_user_id(session, user_id)
+            if existing_subscription:
+                raise ValidationError("User already has a subscription")
+            
+            # Create trial subscription data
+            trial_start_date = datetime.now(timezone.utc)
+            trial_end_date = trial_start_date + timedelta(days=7)  # 7-day free trial
+            
+            subscription_data = {
+                "subscription_id": uuid4(),
+                "user_id": user_id,
+                "plan_type": "free",
+                "status": "active",
+                "trial_active": True,
+                "trial_start_date": trial_start_date,
+                "trial_end_date": trial_end_date,
+                "auto_renew": False,  # Don't auto-renew trial subscriptions
+                "created_at": trial_start_date,
+                "updated_at": trial_start_date
+            }
+            
+            # Create subscription using repository
+            subscription = await self.subscription_repository.create(session, subscription_data)
+            
+            # Update user's subscription tier
+            await self.user_repository.update_subscription_tier(session, user_id, "free")
+            
+            logger.info(f"Free trial subscription created for user {user_id}, expires: {trial_end_date}")
+            
+            return subscription
+            
+        except Exception as e:
+            logger.error(f"Failed to create free trial subscription for user {user_id}: {e}")
+            await session.rollback()
+            raise
+    # =========================================================================
     # VALIDATION HELPERS
     # =========================================================================
     
@@ -489,7 +580,7 @@ class UserService:
         # Validate allowed fields
         allowed_fields = {
             'email', 'password_hash', 'email_verified', 
-            'account_locked', 'provider', 'provider_id'
+            'account_locked_at', 'provider', 'provider_id','account_locked'
         }
         
         for field, value in updates.items():
@@ -542,8 +633,8 @@ class UserService:
             if not user:
                 return
             
-            new_attempts = user.login_attempts + 1
-            updates = {"login_attempts": new_attempts}
+            new_attempts = user.failed_login_attempts + 1
+            updates = {"failed_login_attempts": new_attempts}
             
             # Lock account after 5 failed attempts
             if new_attempts >= 5:
@@ -563,7 +654,7 @@ class UserService:
         """Reset failed login attempts on successful login."""
         try:
             await self.user_repository.update(user_id, {
-                "login_attempts": 0
+                "failed_login_attempts": 0
             })
         except Exception as e:
             logger.error(f"Failed to reset login attempts: {e}")
@@ -607,3 +698,4 @@ def get_user_service(
         user_repository=user_repository,
         profile_repository=profile_repository
     )
+

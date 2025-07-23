@@ -95,7 +95,7 @@ class Profile(BaseModel):
     location: Optional[str] = None  # For weather data integration
     
     # User preferences from core doc
-    timezone: str = "UTC"
+    timezone: Optional[str] = "UTC"
     language: str = "en"  # auto-detect default
     theme: str = "auto"  # light/dark/auto per core doc
     
@@ -114,10 +114,12 @@ class Profile(BaseModel):
     # Preferences and settings
     notification_preferences: NotificationPreferences = Field(default_factory=NotificationPreferences)
     privacy_settings: PrivacySettings = Field(default_factory=PrivacySettings)
+    notification_enabled: bool = True
     
     # Metadata following core doc timestamps
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    
     
     class Config:
         """Pydantic configuration"""

@@ -51,11 +51,11 @@ class User(BaseModel):
     - email (String): User's email address (validated format)
     - password_hash (String): Hashed password using bcrypt
     - created_at (Timestamp): Account creation date
-    - last_login (Timestamp): Last login timestamp
+    - last_login_at (Timestamp): Last login timestamp
     - email_verified (Boolean): Email verification status
     - reset_token (String): Password reset token (nullable)
     - reset_token_expires (Timestamp): Reset token expiration
-    - login_attempts (Integer): Failed login attempt counter
+    - failed_login_attempts (Integer): Failed login attempt counter
     - account_locked (Boolean): Account lock status
     - provider (String): Authentication provider (email/google/apple)
     - provider_id (String): External provider ID
@@ -71,11 +71,11 @@ class User(BaseModel):
     
     # Authentication fields from core doc
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    last_login: Optional[datetime] = None
+    last_login_at: Optional[datetime] = None
     email_verified: bool = False
     reset_token: Optional[str] = None
     reset_token_expires: Optional[datetime] = None
-    login_attempts: int = 0
+    failed_login_attempts: int = 0
     account_locked: bool = False
     provider: str = "email"  # email/google/apple
     provider_id: Optional[str] = None
@@ -100,6 +100,7 @@ class User(BaseModel):
     login_count: int = 0
     last_active_at: Optional[datetime] = None
     registration_ip: Optional[str] = None
+    account_locked_at: Optional[datetime] = None
     
     class Config:
         """Pydantic configuration"""
@@ -217,7 +218,7 @@ class User(BaseModel):
         self.updated_at = datetime.now(timezone.utc)
         
         # Reset security counters
-        self.login_attempts = 0
+        self.failed_login_attempts = 0
         self.account_locked = False
     
     def verify_email(self) -> None:
@@ -257,10 +258,10 @@ class User(BaseModel):
         Args:
             login_ip: IP address of login attempt
         """
-        self.last_login = datetime.now(timezone.utc)
+        self.last_login_at = datetime.now(timezone.utc)
         self.last_active_at = datetime.now(timezone.utc)
         self.login_count += 1
-        self.login_attempts = 0
+        self.failed_login_attempts = 0
         self.account_locked = False
         self.updated_at = datetime.now(timezone.utc)
     
@@ -272,21 +273,23 @@ class User(BaseModel):
         Args:
             max_attempts: Maximum failed attempts before lockout (default 5 per core doc)
         """
-        self.login_attempts += 1
+        self.failed_login_attempts += 1
         self.updated_at = datetime.now(timezone.utc)
         
         # Account lockout protection from core doc
-        if self.login_attempts >= max_attempts:
+        if self.failed_login_attempts >= max_attempts:
+            self.account_locked_at = Optional[datetime]
             self.account_locked = True
+
     
     def unlock_account(self) -> None:
         """
         Unlock user account and reset failed attempts.
         Implements account lockout protection from core doc Authentication functionality.
         """
-        self.login_attempts = 0
+        self.failed_login_attempts = 0
         self.account_locked = False
-        self.updated_at = datetime.now(timezone.utc)
+        self.updated_at = None
     
     def update_activity(self) -> None:
         """Update last activity timestamp for session management."""
@@ -403,7 +406,7 @@ class User(BaseModel):
                 'password_hash',
                 'reset_token',
                 'reset_token_expires',
-                'login_attempts',
+                'failed_login_attempts',
                 'account_locked',
                 'registration_ip',
                 'provider_id'

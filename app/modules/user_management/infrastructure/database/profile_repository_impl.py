@@ -36,15 +36,25 @@ Features:
 import logging
 from typing import List, Optional
 from uuid import UUID
+from fastapi import Depends
 
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import selectinload
+from sqlalchemy import func, and_, or_, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from datetime import timedelta,date,datetime,time,timezone
+from typing import Dict, Any, List, Optional
 
 from app.modules.user_management.domain.repositories.profile_repository import ProfileRepository
 from app.modules.user_management.domain.models.profile import Profile
 from app.modules.user_management.infrastructure.database.models import ProfileModel, UserModel
+from app.shared.infrastructure.database.session import get_db_session
+
+# Domain models and exceptions  
+from app.shared.core.exceptions import RepositoryError
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +67,8 @@ class ProfileRepositoryImpl(ProfileRepository):
     providing async operations with proper error handling and user relationship management.
     """
     
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session = Depends(get_db_session)):
+
         """
         Initialize the profile repository.
         
@@ -83,6 +94,7 @@ class ProfileRepositoryImpl(ProfileRepository):
         try:
             # Verify user exists
             user_exists = await self._user_exists(profile.user_id)
+
             if not user_exists:
                 raise ValueError(f"User not found: {profile.user_id}")
             
@@ -97,7 +109,7 @@ class ProfileRepositoryImpl(ProfileRepository):
         except IntegrityError as e:
             await self._session.rollback()
             logger.warning(f"Profile creation failed - profile already exists for user: {profile.user_id}")
-            raise ValueError(f"Profile already exists for user {profile.user_id}") from e
+            raise ValueError(f"Profile already exists for user {profile.user_id} {str(e)}") from e
             
         except ValueError:
             raise
@@ -366,6 +378,7 @@ class ProfileRepositoryImpl(ProfileRepository):
             notification_enabled=profile.notification_enabled,
             created_at=profile.created_at,
             updated_at=profile.updated_at,
+            experience_level=profile.experience_level
         )
     
     def _model_to_domain(self, profile_model: ProfileModel) -> Profile:
@@ -391,6 +404,7 @@ class ProfileRepositoryImpl(ProfileRepository):
             notification_enabled=profile_model.notification_enabled,
             created_at=profile_model.created_at,
             updated_at=profile_model.updated_at,
+            experience_level=profile_model.experience_level
         )
     
     def _update_model_from_domain(self, profile_model: ProfileModel, profile: Profile) -> None:
@@ -410,3 +424,506 @@ class ProfileRepositoryImpl(ProfileRepository):
         profile_model.theme = profile.theme
         profile_model.notification_enabled = profile.notification_enabled
         profile_model.updated_at = profile.updated_at
+        profile_model.experience_level = profile.experience_level
+
+    
+    async def bulk_update_notification_preferences(
+        self,
+        session: AsyncSession,
+        preferences_updates: List[Dict[str, Any]]
+    ) -> int:
+        try:
+            updated_count = 0
+            for update_data in preferences_updates:
+                user_id = update_data.get('user_id')
+                preferences = update_data.get('notification_preferences', {})
+                
+                if not user_id:
+                    continue
+                    
+                query = (
+                    update(ProfileModel)
+                    .where(ProfileModel.user_id == user_id)
+                    .values(
+                        notification_preferences=preferences,
+                        updated_at=datetime.now(timezone.utc)
+                    )
+                )
+                result = await session.execute(query)
+                updated_count += result.rowcount
+            
+            await session.commit()
+            logger.info(f"Bulk updated notification preferences for {updated_count} profiles")
+            return updated_count
+            
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Failed to bulk update notification preferences: {e}")
+            raise RepositoryError(f"Failed to bulk update notification preferences: {e}")
+
+    async def count_by_location(self, session: AsyncSession, location: str) -> int:
+        try:
+            query = select(func.count(ProfileModel.profile_id)).where(
+                ProfileModel.location.ilike(f"%{location}%")
+            )
+            result = await session.execute(query)
+            count = result.scalar()
+            
+            logger.debug(f"Count of profiles in location {location}: {count}")
+            return count
+            
+        except Exception as e:
+            logger.error(f"Failed to count profiles by location: {e}")
+            raise RepositoryError(f"Failed to count profiles by location: {e}")
+
+    async def count_by_visibility(self, session: AsyncSession, visibility: str) -> int:
+        try:
+            query = select(func.count(ProfileModel.profile_id)).where(
+                ProfileModel.visibility == visibility
+            )
+            result = await session.execute(query)
+            count = result.scalar()
+            
+            logger.debug(f"Count of profiles with visibility {visibility}: {count}")
+            return count
+            
+        except Exception as e:
+            logger.error(f"Failed to count profiles by visibility: {e}")
+            raise RepositoryError(f"Failed to count profiles by visibility: {e}")
+
+    async def exists_by_user_id(self, session: AsyncSession, user_id: UUID) -> bool:
+        try:
+            query = select(func.count(ProfileModel.profile_id)).where(
+                ProfileModel.user_id == user_id
+            )
+            result = await session.execute(query)
+            count = result.scalar()
+            
+            exists = count > 0
+            logger.debug(f"Profile exists for user {user_id}: {exists}")
+            return exists
+            
+        except Exception as e:
+            logger.error(f"Failed to check if profile exists by user ID: {e}")
+            raise RepositoryError(f"Failed to check if profile exists by user ID: {e}")
+
+    async def get_by_experience_level(
+        self,
+        session: AsyncSession,
+        experience_level: str,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Profile]:
+        try:
+            query = (
+                select(ProfileModel)
+                .where(ProfileModel.experience_level == experience_level)
+                .offset(skip)
+                .limit(limit)
+                .order_by(ProfileModel.created_at.desc())
+            )
+            result = await session.execute(query)
+            profiles_db = result.scalars().all()
+            
+            profiles = [self._convert_to_domain(profile_db) for profile_db in profiles_db]
+            logger.debug(f"Retrieved {len(profiles)} profiles with experience level {experience_level}")
+            return profiles
+            
+        except Exception as e:
+            logger.error(f"Failed to get profiles by experience level: {e}")
+            raise RepositoryError(f"Failed to get profiles by experience level: {e}")
+
+    async def get_by_interests(
+        self,
+        session: AsyncSession,
+        interests: List[str],
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Profile]:
+        try:
+            # Using JSON contains operation for interests array
+            query = (
+                select(ProfileModel)
+                .offset(skip)
+                .limit(limit)
+                .order_by(ProfileModel.created_at.desc())
+            )
+            
+            # Add filter for interests if provided
+            if interests:
+                for interest in interests:
+                    query = query.where(
+                        ProfileModel.interests.contains([interest])
+                    )
+            
+            result = await session.execute(query)
+            profiles_db = result.scalars().all()
+            
+            profiles = [self._convert_to_domain(profile_db) for profile_db in profiles_db]
+            logger.debug(f"Retrieved {len(profiles)} profiles with interests {interests}")
+            return profiles
+            
+        except Exception as e:
+            logger.error(f"Failed to get profiles by interests: {e}")
+            raise RepositoryError(f"Failed to get profiles by interests: {e}")
+
+    async def get_by_language(
+        self,
+        session: AsyncSession,
+        language: str,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Profile]:
+        try:
+            query = (
+                select(ProfileModel)
+                .where(ProfileModel.language == language)
+                .offset(skip)
+                .limit(limit)
+                .order_by(ProfileModel.created_at.desc())
+            )
+            result = await session.execute(query)
+            profiles_db = result.scalars().all()
+            
+            profiles = [self._convert_to_domain(profile_db) for profile_db in profiles_db]
+            logger.debug(f"Retrieved {len(profiles)} profiles with language {language}")
+            return profiles
+            
+        except Exception as e:
+            logger.error(f"Failed to get profiles by language: {e}")
+            raise RepositoryError(f"Failed to get profiles by language: {e}")
+
+    async def get_incomplete_profiles(
+        self,
+        session: AsyncSession,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Profile]:
+        try:
+            # Consider profile incomplete if missing key fields
+            query = (
+                select(ProfileModel)
+                .where(
+                    or_(
+                        ProfileModel.display_name.is_(None),
+                        ProfileModel.display_name == "",
+                        ProfileModel.bio.is_(None),
+                        ProfileModel.bio == "",
+                        ProfileModel.profile_photo.is_(None),
+                        ProfileModel.location.is_(None)
+                    )
+                )
+                .offset(skip)
+                .limit(limit)
+                .order_by(ProfileModel.created_at.desc())
+            )
+            result = await session.execute(query)
+            profiles_db = result.scalars().all()
+            
+            profiles = [self._convert_to_domain(profile_db) for profile_db in profiles_db]
+            logger.debug(f"Retrieved {len(profiles)} incomplete profiles")
+            return profiles
+            
+        except Exception as e:
+            logger.error(f"Failed to get incomplete profiles: {e}")
+            raise RepositoryError(f"Failed to get incomplete profiles: {e}")
+
+    async def get_most_active(
+        self,
+        session: AsyncSession,
+        days: int = 30,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Profile]:
+        try:
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+            
+            # Order by activity score descending and recent updates
+            query = (
+                select(ProfileModel)
+                .where(ProfileModel.updated_at >= cutoff_date)
+                .offset(skip)
+                .limit(limit)
+                .order_by(
+                    ProfileModel.activity_score.desc(),
+                    ProfileModel.updated_at.desc()
+                )
+            )
+            result = await session.execute(query)
+            profiles_db = result.scalars().all()
+            
+            profiles = [self._convert_to_domain(profile_db) for profile_db in profiles_db]
+            logger.debug(f"Retrieved {len(profiles)} most active profiles in last {days} days")
+            return profiles
+            
+        except Exception as e:
+            logger.error(f"Failed to get most active profiles: {e}")
+            raise RepositoryError(f"Failed to get most active profiles: {e}")
+
+    async def get_most_followed(
+        self,
+        session: AsyncSession,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Profile]:
+        try:
+            query = (
+                select(ProfileModel)
+                .offset(skip)
+                .limit(limit)
+                .order_by(
+                    ProfileModel.followers_count.desc(),
+                    ProfileModel.created_at.desc()
+                )
+            )
+            result = await session.execute(query)
+            profiles_db = result.scalars().all()
+            
+            profiles = [self._convert_to_domain(profile_db) for profile_db in profiles_db]
+            logger.debug(f"Retrieved {len(profiles)} most followed profiles")
+            return profiles
+            
+        except Exception as e:
+            logger.error(f"Failed to get most followed profiles: {e}")
+            raise RepositoryError(f"Failed to get most followed profiles: {e}")
+
+    async def get_profile_analytics(
+        self,
+        session: AsyncSession,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        try:
+            conditions = []
+            if start_date:
+                conditions.append(ProfileModel.created_at >= start_date)
+            if end_date:
+                conditions.append(ProfileModel.created_at <= end_date)
+            
+            # Total profiles
+            total_query = select(func.count(ProfileModel.profile_id))
+            if conditions:
+                total_query = total_query.where(and_(*conditions))
+            
+            total_result = await session.execute(total_query)
+            total_profiles = total_result.scalar()
+            
+            # Profiles by experience level
+            experience_query = (
+                select(ProfileModel.experience_level, func.count(ProfileModel.profile_id))
+                .group_by(ProfileModel.experience_level)
+            )
+            if conditions:
+                experience_query = experience_query.where(and_(*conditions))
+            
+            experience_result = await session.execute(experience_query)
+            experience_stats = dict(experience_result.all())
+            
+            # Profiles by language
+            language_query = (
+                select(ProfileModel.language, func.count(ProfileModel.profile_id))
+                .group_by(ProfileModel.language)
+            )
+            if conditions:
+                language_query = language_query.where(and_(*conditions))
+            
+            language_result = await session.execute(language_query)
+            language_stats = dict(language_result.all())
+            
+            # Completion stats
+            complete_query = select(func.count(ProfileModel.profile_id)).where(
+                and_(
+                    ProfileModel.display_name.isnot(None),
+                    ProfileModel.bio.isnot(None),
+                    ProfileModel.profile_photo.isnot(None),
+                    *conditions if conditions else [True]
+                )
+            )
+            complete_result = await session.execute(complete_query)
+            complete_profiles = complete_result.scalar()
+            
+            analytics = {
+                "total_profiles": total_profiles,
+                "complete_profiles": complete_profiles,
+                "completion_rate": (complete_profiles / total_profiles * 100) if total_profiles > 0 else 0,
+                "by_experience_level": experience_stats,
+                "by_language": language_stats,
+                "period_start": start_date.isoformat() if start_date else None,
+                "period_end": end_date.isoformat() if end_date else None
+            }
+            
+            logger.debug(f"Retrieved profile analytics: {analytics}")
+            return analytics
+            
+        except Exception as e:
+            logger.error(f"Failed to get profile analytics: {e}")
+            raise RepositoryError(f"Failed to get profile analytics: {e}")
+
+    async def get_profiles_by_notification_preference(
+        self,
+        session: AsyncSession,
+        preference_key: str,
+        preference_value: Any,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Profile]:
+        try:
+            # Using JSON path operation to check notification preferences
+            query = (
+                select(ProfileModel)
+                .where(
+                    ProfileModel.notification_preferences[preference_key].as_string() == str(preference_value)
+                )
+                .offset(skip)
+                .limit(limit)
+                .order_by(ProfileModel.created_at.desc())
+            )
+            result = await session.execute(query)
+            profiles_db = result.scalars().all()
+            
+            profiles = [self._convert_to_domain(profile_db) for profile_db in profiles_db]
+            logger.debug(f"Retrieved {len(profiles)} profiles with {preference_key}={preference_value}")
+            return profiles
+            
+        except Exception as e:
+            logger.error(f"Failed to get profiles by notification preference: {e}")
+            raise RepositoryError(f"Failed to get profiles by notification preference: {e}")
+
+    async def get_profiles_without_photos(
+        self,
+        session: AsyncSession,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Profile]:
+        try:
+            query = (
+                select(ProfileModel)
+                .where(
+                    or_(
+                        ProfileModel.profile_photo.is_(None),
+                        ProfileModel.profile_photo == ""
+                    )
+                )
+                .offset(skip)
+                .limit(limit)
+                .order_by(ProfileModel.created_at.desc())
+            )
+            result = await session.execute(query)
+            profiles_db = result.scalars().all()
+            
+            profiles = [self._convert_to_domain(profile_db) for profile_db in profiles_db]
+            logger.debug(f"Retrieved {len(profiles)} profiles without photos")
+            return profiles
+            
+        except Exception as e:
+            logger.error(f"Failed to get profiles without photos: {e}")
+            raise RepositoryError(f"Failed to get profiles without photos: {e}")
+
+    async def search_profiles(
+        self,
+        session: AsyncSession,
+        search_term: str,
+        filters: Optional[Dict[str, Any]] = None,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Profile]:
+        try:
+            query = select(ProfileModel)
+            
+            # Base search conditions
+            search_conditions = []
+            if search_term:
+                search_pattern = f"%{search_term}%"
+                search_conditions.append(
+                    or_(
+                        ProfileModel.display_name.ilike(search_pattern),
+                        ProfileModel.bio.ilike(search_pattern),
+                        ProfileModel.location.ilike(search_pattern)
+                    )
+                )
+            
+            # Apply filters
+            filter_conditions = []
+            if filters:
+                if "experience_level" in filters:
+                    filter_conditions.append(ProfileModel.experience_level == filters["experience_level"])
+                if "language" in filters:
+                    filter_conditions.append(ProfileModel.language == filters["language"])
+                if "location" in filters:
+                    filter_conditions.append(ProfileModel.location.ilike(f"%{filters['location']}%"))
+                if "has_photo" in filters:
+                    if filters["has_photo"]:
+                        filter_conditions.append(ProfileModel.profile_photo.isnot(None))
+                    else:
+                        filter_conditions.append(ProfileModel.profile_photo.is_(None))
+                if "visibility" in filters:
+                    filter_conditions.append(ProfileModel.visibility == filters["visibility"])
+            
+            # Combine all conditions
+            all_conditions = search_conditions + filter_conditions
+            if all_conditions:
+                query = query.where(and_(*all_conditions))
+            
+            # Apply pagination and ordering
+            query = (
+                query
+                .offset(skip)
+                .limit(limit)
+                .order_by(ProfileModel.followers_count.desc(), ProfileModel.created_at.desc())
+            )
+            
+            result = await session.execute(query)
+            profiles_db = result.scalars().all()
+            
+            profiles = [self._convert_to_domain(profile_db) for profile_db in profiles_db]
+            logger.debug(f"Search returned {len(profiles)} profiles for term: {search_term}")
+            return profiles
+            
+        except Exception as e:
+            logger.error(f"Failed to search profiles: {e}")
+            raise RepositoryError(f"Failed to search profiles: {e}")
+
+    async def update_social_stats(
+        self,
+        session: AsyncSession,
+        user_id: UUID,
+        followers_count: Optional[int] = None,
+        following_count: Optional[int] = None,
+        posts_count: Optional[int] = None,
+        activity_score: Optional[float] = None
+    ) -> bool:
+        try:
+            # Build update values
+            update_values = {
+                "updated_at": datetime.now(timezone.utc)
+            }
+            
+            if followers_count is not None:
+                update_values["followers_count"] = followers_count
+            if following_count is not None:
+                update_values["following_count"] = following_count
+            if posts_count is not None:
+                update_values["posts_count"] = posts_count
+            if activity_score is not None:
+                update_values["activity_score"] = activity_score
+            
+            query = (
+                update(ProfileModel)
+                .where(ProfileModel.user_id == user_id)
+                .values(**update_values)
+            )
+            result = await session.execute(query)
+            await session.commit()
+            
+            success = result.rowcount > 0
+            if success:
+                logger.debug(f"Updated social stats for user {user_id}")
+            else:
+                logger.warning(f"No profile found to update social stats for user {user_id}")
+            
+            return success
+            
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Failed to update social stats: {e}")
+            raise RepositoryError(f"Failed to update social stats: {e}")

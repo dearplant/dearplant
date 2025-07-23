@@ -41,6 +41,9 @@ from fastapi import Depends
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.shared.infrastructure.database.session import get_db_session  # or however you access DB session
+
 
 from app.modules.user_management.application.queries.get_user import GetUserQuery, UserLookupType, SecurityLevel
 from app.modules.user_management.application.queries.get_profile import GetProfileQuery, ProfileLookupType, PrivacyLevel
@@ -53,8 +56,14 @@ from app.modules.user_management.domain.services.profile_service import ProfileS
 from app.modules.user_management.domain.repositories.user_repository import UserRepository
 from app.modules.user_management.domain.repositories.profile_repository import ProfileRepository
 
+from app.modules.user_management.infrastructure.database.user_repository_impl import UserRepositoryImpl
+
 logger = logging.getLogger(__name__)
 
+def get_user_repository(
+    session: AsyncSession = Depends(get_db_session),
+) -> UserRepository:
+    return UserRepositoryImpl(session)
 
 class GetUserQueryHandler:
     """
@@ -71,7 +80,7 @@ class GetUserQueryHandler:
     def __init__(
         self,
         user_service: UserService = Depends(),
-        user_repository: UserRepository = Depends(),
+        user_repository: UserRepository = Depends(get_user_repository),
     ):
         """
         Initialize the get user query handler.
@@ -181,7 +190,7 @@ class GetUserQueryHandler:
         if query.include_timestamps:
             user_data.update({
                 "created_at": user.created_at,
-                "last_login": user.last_login,
+                "last_login_at": user.last_login_at,
             })
         
         # Apply provider data filtering
@@ -209,7 +218,7 @@ class GetUserQueryHandler:
         """
         return {
             "account_locked": user.account_locked,
-            "login_attempts": user.login_attempts,
+            "failed_login_attempts": user.failed_login_attempts,
             "has_reset_token": user.reset_token is not None,
             "reset_token_expires": user.reset_token_expires,
         }
@@ -235,7 +244,6 @@ class GetUserQueryHandler:
             }
         ]
 
-
 class GetProfileQueryHandler:
     """
     Handler for profile data retrieval query following Core Doc 1.2 specifications.
@@ -252,7 +260,7 @@ class GetProfileQueryHandler:
         self,
         profile_service: ProfileService = Depends(),
         profile_repository: ProfileRepository =Depends(),
-        user_repository: UserRepository =Depends(),
+        user_repository: UserRepository = Depends(get_user_repository),
     ):
         """
         Initialize the get profile query handler.

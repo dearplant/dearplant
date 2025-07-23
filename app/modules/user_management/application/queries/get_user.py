@@ -306,7 +306,7 @@ class GetUserQuery(BaseModel):
         # Login history filtering
         if not self.is_authorized_for_login_history():
             excluded_fields.extend([
-                "login_attempts",
+                "failed_login_attempts",
             ])
         
         # Admin-only fields
@@ -326,7 +326,7 @@ class GetUserQuery(BaseModel):
         if not self.include_timestamps:
             excluded_fields.extend([
                 "created_at",
-                "last_login",
+                "last_login_at",
             ])
         
         return excluded_fields

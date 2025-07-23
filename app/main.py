@@ -43,8 +43,18 @@ from app.api.middleware.cors import PlantCareCORSMiddleware
 from app.api.middleware.localization import LocalizationMiddleware
 from app.api.v1.router import api_v1_router
 from app.api.v1.health import health_router
+# Import the blueprint (UserRepository) and the real implementation (UserRepositoryImpl)
+from app.modules.user_management.domain.repositories.user_repository import UserRepository
+from app.modules.user_management.infrastructure.database.user_repository_impl import UserRepositoryImpl
+
+# You will likely need to do this for your other repositories as well. For example:
+from app.modules.user_management.domain.repositories.profile_repository import ProfileRepository
+# (Assuming you have a similar implementation file for the profile repository)
+from app.modules.user_management.infrastructure.database.profile_repository_impl import ProfileRepositoryImpl
+from datetime import datetime
 from fastapi.routing import APIRoute
 import inspect
+from app.shared.infrastructure.database.session import initialize_sessions
 
 # Monkey patch to log invalid response_model usage
 original_route_init = APIRoute.__init__
@@ -67,10 +77,10 @@ original_route_init = APIRoute.__init__
 settings = get_settings()
 
 # Setup logging
-logging.basicConfig(level=logging.ERROR)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
+ 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
@@ -83,10 +93,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("🌱 Plant Care API starting up...")
     
     try:
+
         # Initialize database connection
         from app.shared.infrastructure.database.connection import init_database
         await init_database()
         logger.info("✅ Database connection initialized")
+        
+        from app.shared.infrastructure.database.session import initialize_sessions
+        await initialize_sessions()
+        logger.info("✅ Session manager initialized")
         
         # Initialize Redis cache
         from app.shared.infrastructure.cache.redis_client import init_redis
@@ -197,6 +212,13 @@ def create_application() -> FastAPI:
     # GZip compression middleware
     app.add_middleware(GZipMiddleware, minimum_size=1000)
     
+        # This creates a global rule for your entire application.
+    # It tells FastAPI: "Whenever any part of the app asks for UserRepository,
+    # give it an instance of UserRepositoryImpl."
+    app.dependency_overrides[UserRepository] = UserRepositoryImpl
+    app.dependency_overrides[ProfileRepository] = ProfileRepositoryImpl # Add this for profiles too
+
+
     # =========================================================================
     # ROUTER REGISTRATION
     # =========================================================================
@@ -228,7 +250,7 @@ def create_application() -> FastAPI:
                     "code": exc.error_code,
                     "message": exc.message,
                     "details": exc.details,
-                    "timestamp": exc.timestamp.isoformat(),
+                    "timestamp": getattr(exc, "timestamp", datetime.utcnow()).isoformat(),
                     "request_id": getattr(request.state, "request_id", None),
                 }
             },
@@ -316,6 +338,7 @@ def create_application() -> FastAPI:
 
 # Create the FastAPI application
 app = create_application()
+
 
 
 def main():

@@ -40,6 +40,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.shared.infrastructure.database.session import get_db_session  # or however you access DB session
 
 # --- Third-party ---
 from passlib.context import CryptContext
@@ -66,10 +68,15 @@ from app.modules.user_management.domain.repositories.profile_repository import P
 from app.modules.user_management.infrastructure.external.supabase_auth import SupabaseAuthService
 from app.shared.events.publisher import EventPublisher
 
+from app.modules.user_management.infrastructure.database.user_repository_impl import UserRepositoryImpl
+
 logger = logging.getLogger(__name__)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-
+def get_user_repository(
+    session: AsyncSession = Depends(get_db_session),
+) -> UserRepository:
+    return UserRepositoryImpl(session)
 
 class CreateUserCommandHandler:
     """
@@ -80,7 +87,7 @@ class CreateUserCommandHandler:
         user_service: UserService  = Depends(),
         auth_service: AuthService  = Depends(),
         profile_service: ProfileService  = Depends(),
-        user_repository: UserRepository  = Depends(),
+        user_repository: UserRepository = Depends(get_user_repository),
         profile_repository: ProfileRepository  = Depends(),
         supabase_auth: SupabaseAuthService  = Depends(),
         event_publisher: EventPublisher  = Depends(),
@@ -115,11 +122,12 @@ class CreateUserCommandHandler:
             created_user = await self._user_repository.create(user)
             profile_data["user_id"] = created_user.user_id
             profile = Profile(**profile_data)
-
-            profile_validation = await self._profile_service.validate_new_profile(profile)
-            if not profile_validation.is_valid:
+            logger.info(f"profile_data keys: {profile_data.keys()}")
+            validation_result = await self._profile_service.validate_new_profile(profile)
+            if not validation_result.is_valid:
                 await self._user_repository.delete(created_user.user_id)
-                raise ValueError(f"Profile validation failed: {profile_validation.error_message}")
+                raise ValueError(f"Profile validation failed: {validation_result.error_message}")
+            logger.info(f"profile data validated: {profile}")
 
             created_profile = await self._profile_repository.create(profile)
 

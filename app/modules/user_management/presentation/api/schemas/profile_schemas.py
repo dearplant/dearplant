@@ -127,7 +127,7 @@ class ProfileCreateRequest(BaseModel):
         example="Seattle, WA"
     )
     timezone: Optional[str] = Field(
-        default=None,
+        default="UTC",
         max_length=50,
         description="User's timezone",
         example="America/Los_Angeles"
@@ -205,7 +205,7 @@ class ProfileUpdateRequest(BaseModel):
         example="Portland, OR"
     )
     timezone: Optional[str] = Field(
-        default=None,
+        default="UTC",
         max_length=50,
         description="Updated timezone",
         example="America/Los_Angeles"
@@ -481,7 +481,7 @@ class ProfileResponse(BaseModel):
         example="San Francisco, CA"
     )
     timezone: Optional[str] = Field(
-        default=None,
+        default="UTC",
         description="User timezone (privacy controlled)",
         example="America/Los_Angeles"
     )
@@ -496,7 +496,7 @@ class ProfileResponse(BaseModel):
         example=ThemePreference.AUTO
     )
     notification_enabled: Optional[bool] = Field(
-        default=None,
+        default=True,
         description="Notification setting (self/admin only)",
         example=True
     )
@@ -561,7 +561,6 @@ class ProfileResponse(BaseModel):
             ProfileResponse: Filtered profile response
         """
         settings = privacy_settings or {}
-        
         # Base response data (always visible)
         response_data = {
             "profile_id": profile_data["profile_id"],
