@@ -10,6 +10,7 @@
 
 from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any
+from uuid import UUID
 
 from ..models.user import User, UserStatus, SubscriptionTier
 
@@ -355,5 +356,32 @@ class UserRepository(ABC):
             
         Returns:
             True if user exists, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def update_subscription_tier(
+        self,
+        user_id: UUID,
+        new_tier: str,
+        trial_active: bool = False,
+        payment_method: Optional[str] = None
+    ) -> bool:
+        """
+        Update the user's subscription tier.
+
+        Args:
+            user_id (UUID): Unique identifier of the user
+            new_tier (str): New subscription plan tier (e.g., "free", "premium_monthly", "premium_yearly")
+            trial_active (bool, optional): Whether to activate a free trial. Defaults to False.
+            payment_method (Optional[str], optional): Payment method to associate with premium plan (e.g., "razorpay", "stripe"). Defaults to None.
+
+        Returns:
+            bool: True if the update was successful, False otherwise.
+
+        Raises:
+            ValidationError: If provided tier or payment method is invalid.
+            NotFoundError: If the user or their subscription doesn't exist.
+            DatabaseError: If the operation fails due to a database issue.
         """
         pass

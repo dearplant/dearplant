@@ -131,17 +131,41 @@ class CreateUserCommandHandler:
 
             created_profile = await self._profile_repository.create(profile)
 
-            trial_end_date = datetime.utcnow() + timedelta(days=7)
-            await self._user_service.create_free_trial_subscription(
-                created_user.user_id,
-                trial_end_date,
-            )
+            # Pass the database session instead of trial_end_date
+            session = await get_db_session().__anext__()  # Get the AsyncSession
+            await self._user_service.create_free_trial_subscription(created_user.user_id, session)
 
+            logger.info(f"created_user {created_user}")
             if command.provider == "email":
-                sync_success = await self._supabase_auth.sync_user_with_supabase(created_user)
-                if not sync_success:
-                    logger.warning(f"Failed to sync user with Supabase: {created_user.email}")
+                user_payload = {
+                    "user_id": str(created_user.user_id),
+                    "email": created_user.email,
+                    "password": created_user.password_hash,
+                    "created_at": created_user.created_at.isoformat(),
+                    "last_login_at": created_user.last_login_at.isoformat() if created_user.last_login_at else None,
+                    "email_verified": created_user.email_verified,
+                    "provider": created_user.provider,
+                    "provider_id": created_user.provider_id,
+                    "role": created_user.role.value if created_user.role else None,
+                    "status": created_user.status.value if created_user.status else None,
+                    "subscription_tier": created_user.subscription_tier.value if created_user.subscription_tier else None,
+                    "display_name": created_user.display_name,
+                    "profile_photo": created_user.profile_photo,
+                    "language": created_user.language,
+                    "timezone": created_user.timezone,
+                    "theme": created_user.theme,
+                    "notification_enabled": created_user.notification_enabled,
+                    "updated_at": created_user.updated_at.isoformat() if created_user.updated_at else None,
+                    "login_count": created_user.login_count,
+                    "last_active_at": created_user.last_active_at.isoformat() if created_user.last_active_at else None,
+                    "registration_ip": created_user.registration_ip,
+                    "account_locked_at": created_user.account_locked_at.isoformat() if created_user.account_locked_at else None,
+                }
+                # sync_success = await self._supabase_auth.sync_user_with_supabase(created_user.user_id, user_payload)
+                # if not sync_success:
+                #     logger.warning(f"Failed to sync user with Supabase: {created_user.email}")
 
+            trial_end_date = datetime.utcnow() + timedelta(days=7)
             await self._event_publisher.publish("UserCreated", {
                 "user_id": str(created_user.user_id),
                 "email": created_user.email,
@@ -175,7 +199,6 @@ class CreateUserCommandHandler:
         except Exception as e:
             logger.error(f"Error creating user for {command.email}: {str(e)}")
             raise Exception(f"Failed to create user: {str(e)}") from e
-
 
 
 class UpdateProfileCommandHandler:

@@ -36,12 +36,15 @@ Features:
 import logging
 from typing import List, Optional
 from uuid import UUID
+import uuid
 from fastapi import Depends 
 
 from sqlalchemy import select, update, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy import func, and_, or_, update
+from sqlalchemy import func, and_, or_, update,select
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+
 from datetime import timedelta,datetime,timezone,time
 from typing import Dict, Any, List, Optional
 
@@ -51,7 +54,13 @@ from app.modules.user_management.infrastructure.database.models import UserModel
 from app.modules.user_management.domain.models.user import UserStatus, SubscriptionTier
 from app.shared.core.exceptions import RepositoryError
 from app.shared.infrastructure.database.session import get_db_session
+from app.modules.user_management.infrastructure.database.models import SubscriptionModel, UserModel
+from app.modules.user_management.domain.models.subscription import SubscriptionPlan,SubscriptionStatus
 
+from .....shared.core.exceptions import (
+    NotFoundError,
+    DatabaseError
+)
 
 logger = logging.getLogger(__name__)
 
@@ -403,7 +412,7 @@ class UserRepositoryImpl(UserRepository):
             User: Domain User entity
         """
         return User(
-            user_id=user_model.user_id,
+            user_id=str(user_model.user_id),
             email=user_model.email,
             password_hash=user_model.password_hash,
             created_at=user_model.created_at,
@@ -796,3 +805,123 @@ class UserRepositoryImpl(UserRepository):
         except Exception as e:
             logger.error(f"Failed to check if user exists by ID: {e}")
             raise RepositoryError(f"Failed to check if user exists by ID: {e}")
+        
+    async def update_subscription_tier(
+        self,
+        user_id: UUID,
+        new_tier: str,
+        trial_active: bool = False,
+        trial_days: int = 7
+    ) -> bool:
+        """
+        Update user subscription tier.
+
+        Args:
+            session: Async SQLAlchemy session
+            user_id: User identifier
+            new_tier: New subscription tier (free/premium_monthly/premium_yearly)
+            trial_active: Whether to activate trial
+            trial_days: Number of trial days (default 7 from Core Doc 1.3)
+
+        Returns:
+            bool: True if update successful, False otherwise
+
+        Raises:
+            DatabaseError: If database operation fails
+            NotFoundError: If user not found
+        """
+        try:
+            # Convert string to enum
+            plan_type = SubscriptionPlan(new_tier)
+
+            # Get current user
+            user_query = select(UserModel).where(UserModel.user_id == user_id)
+            user_result = await self._session.execute(user_query)
+            user = user_result.scalar_one_or_none()
+
+            if not user:
+                logger.error(f"User {user_id} not found for subscription tier update")
+                raise NotFoundError(
+                    "User not found",
+                    resource_type="user",
+                    resource_id=str(user_id)
+                )
+
+            # Update user subscription tier
+            user_update_query = update(UserModel).where(UserModel.user_id == user_id).values(subscription_tier=new_tier)
+            await self._session.execute(user_update_query)
+
+            # Get or create subscription
+            subscription_query = select(SubscriptionModel).where(SubscriptionModel.user_id == user_id)
+            subscription_result = await self._session.execute(subscription_query)
+            subscription = subscription_result.scalar_one_or_none()
+
+            if subscription:
+                # Update existing subscription
+                update_values = {
+                    "plan_type": plan_type.value,
+                    "updated_at": datetime.utcnow()
+                }
+
+                # Set trial dates if trial is active
+                if trial_active and plan_type != SubscriptionPlan.FREE:
+                    update_values["trial_active"] = True
+                    update_values["trial_start_date"] = datetime.utcnow()
+                    update_values["trial_end_date"] = datetime.utcnow() + timedelta(days=trial_days)
+                else:
+                    update_values["trial_active"] = False
+                    update_values["trial_start_date"] = None
+                    update_values["trial_end_date"] = None
+
+                # Set subscription dates based on plan
+                if plan_type == SubscriptionPlan.PREMIUM_MONTHLY:
+                    update_values["subscription_end_date"] = datetime.utcnow() + timedelta(days=30)
+                elif plan_type == SubscriptionPlan.PREMIUM_YEARLY:
+                    update_values["subscription_end_date"] = datetime.utcnow() + timedelta(days=365)
+                elif plan_type == SubscriptionPlan.FREE:
+                    update_values["subscription_end_date"] = None
+                    update_values["payment_method"] = None
+                    update_values["auto_renew"] = False
+
+                update_query = update(SubscriptionModel).where(
+                    SubscriptionModel.subscription_id == subscription.subscription_id
+                ).values(**update_values)
+                await self._session.execute(update_query)
+            else:
+                # Create new subscription
+                trial_start_date = None
+                trial_end_date = None
+                if trial_active and plan_type != SubscriptionPlan.FREE:
+                    trial_start_date = datetime.utcnow()
+                    trial_end_date = trial_start_date + timedelta(days=trial_days)
+
+                subscription_start_date = datetime.utcnow()
+                subscription_end_date = None
+                if plan_type == SubscriptionPlan.PREMIUM_MONTHLY:
+                    subscription_end_date = subscription_start_date + timedelta(days=30)
+                elif plan_type == SubscriptionPlan.PREMIUM_YEARLY:
+                    subscription_end_date = subscription_start_date + timedelta(days=365)
+
+                new_subscription = SubscriptionModel(
+                    subscription_id=str(uuid.uuid4()),
+                    user_id=user_id,
+                    plan_type=plan_type.value,
+                    status=SubscriptionStatus.ACTIVE,
+                    trial_active=trial_active if plan_type != SubscriptionPlan.FREE else False,
+                    trial_start_date=trial_start_date,
+                    trial_end_date=trial_end_date,
+                    subscription_start_date=subscription_start_date,
+                    subscription_end_date=subscription_end_date,
+                    payment_method=None,
+                    auto_renew=False
+                )
+                self._session.add(new_subscription)
+
+            logger.info(f"Updated subscription tier for user {user_id} to {new_tier}")
+            await self._session.commit()
+            return True
+
+        except SQLAlchemyError as e:
+            await self._session.rollback()
+            logger.error(f"Database error updating subscription tier for user {user_id}: {e}")
+            raise DatabaseError(f"Failed to update subscription tier: {e}")

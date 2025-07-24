@@ -35,10 +35,10 @@ class SecurityManager:
     
     def __init__(self):
         self.settings = get_settings()
-        self.algorithm = self.settings.jwt_algorithm
-        self.secret_key = self.settings.jwt_secret_key
-        self.access_token_expire_minutes = self.settings.access_token_expire_minutes
-        self.refresh_token_expire_days = self.settings.refresh_token_expire_days
+        self.algorithm = self.settings.JWT_ALGORITHM
+        self.secret_key = self.settings.JWT_SECRET_KEY
+        self.access_token_expire_minutes = self.settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+        self.refresh_token_expire_days = self.settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS
     
     def create_access_token(
         self, 

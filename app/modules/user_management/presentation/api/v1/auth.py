@@ -52,6 +52,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 from uuid import UUID
+import traceback
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -139,7 +140,7 @@ async def register(
     """
     try:
         logger.info(f"User registration attempt for email: {registration_data.email}")
-        
+
         # Create user registration command
         create_command = CreateUserCommand(
             email=registration_data.email,
@@ -168,13 +169,12 @@ async def register(
         )
         
         logger.info(f"User registered successfully: {result['user_id']}")
-        
         return LoginResponse(
             access_token=access_token,
             refresh_token=refresh_token,
             token_type="bearer",
             expires_in=86400,  # 24 hours in seconds
-            user_id=result["user_id"],
+            user_id=str(result["user_id"]),
             email=result["email"],
             display_name=result["display_name"],
             email_verified=result["email_verified"],
@@ -185,6 +185,7 @@ async def register(
         
     except ValueError as e:
         logger.warning(f"Registration validation error: {str(e)}")
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)

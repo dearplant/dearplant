@@ -218,7 +218,7 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
             raise
         except Exception as e:
             # Convert unexpected errors to HTTP 500
-            logger.error(f"Unexpected error in database session dependency: {e}")
+            logger.error(f"Unexpected error in database session dependency: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Internal database error: {str(e)}"

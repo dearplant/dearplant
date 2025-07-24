@@ -39,6 +39,8 @@ if TYPE_CHECKING:
     )
     from app.modules.user_management.infrastructure.database.user_repository_impl import UserRepositoryImpl
     from app.modules.user_management.infrastructure.database.profile_repository_impl import ProfileRepositoryImpl
+    from app.modules.user_management.infrastructure.database.subscription_repository_impl import SubscriptionRepositoryImpl
+
 
 __all__ = [
     "UserModel",
@@ -46,4 +48,5 @@ __all__ = [
     "SubscriptionModel",
     "UserRepositoryImpl",
     "ProfileRepositoryImpl",
+    "SubscriptionRepositoryImpl"
 ]

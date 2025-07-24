@@ -12,6 +12,9 @@
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy import select, and_, update
+
 import logging
 from typing import Optional, Dict, Any, List
 from uuid import UUID, uuid4
@@ -26,6 +29,7 @@ from ..repositories.profile_repository import ProfileRepository
 from app.modules.user_management.domain.repositories.user_repository import UserRepository
 from app.modules.user_management.domain.repositories.subscription_repository import SubscriptionRepository
 from app.shared.core.exceptions import ValidationError, RepositoryError
+from app.modules.user_management.domain.models.subscription import SubscriptionPlan,PaymentMethod,SubscriptionStatus
 
 from ..events.user_events import (
     UserCreated, 
@@ -38,7 +42,8 @@ from .....shared.core.exceptions import (
     AuthenticationError,
     AuthorizationError,
     NotFoundError,
-    DuplicateResourceError
+    DuplicateResourceError,
+    DatabaseError
 )
 
 logger = logging.getLogger(__name__)
@@ -163,7 +168,7 @@ class UserService:
             return saved_user
             
         except Exception as e:
-            logger.error(f"Failed to create user: {e}")
+            logger.error(f"Failed to create user: {str(e)}")
             if isinstance(e, (DuplicateResourceError, ValidationError)):
                 raise
             raise ValidationError(f"User creation failed: {str(e)}")
@@ -517,7 +522,7 @@ class UserService:
         
         try:
             # Check if user already has a subscription
-            existing_subscription = await self.subscription_repository.get_by_user_id(session, user_id)
+            existing_subscription = await self.subscription_repository.get_by_user_id(user_id)
             if existing_subscription:
                 raise ValidationError("User already has a subscription")
             
@@ -526,23 +531,24 @@ class UserService:
             trial_end_date = trial_start_date + timedelta(days=7)  # 7-day free trial
             
             subscription_data = {
-                "subscription_id": uuid4(),
-                "user_id": user_id,
-                "plan_type": "free",
-                "status": "active",
+                "subscription_id": str(uuid4()),
+                "user_id": str(user_id),  # Ensure user_id is a string
+                "plan_type": SubscriptionPlan.FREE.value,  # Explicitly use string value
+                "status": SubscriptionStatus.ACTIVE.value,
                 "trial_active": True,
                 "trial_start_date": trial_start_date,
                 "trial_end_date": trial_end_date,
-                "auto_renew": False,  # Don't auto-renew trial subscriptions
+                "auto_renew": False,
                 "created_at": trial_start_date,
-                "updated_at": trial_start_date
+                "updated_at": trial_start_date,
+                "payment_method": PaymentMethod.NONE.value
             }
             
             # Create subscription using repository
-            subscription = await self.subscription_repository.create(session, subscription_data)
+            subscription = await self.subscription_repository.create(subscription_data)
             
             # Update user's subscription tier
-            await self.user_repository.update_subscription_tier(session, user_id, "free")
+            await self.user_repository.update_subscription_tier(user_id, "free")
             
             logger.info(f"Free trial subscription created for user {user_id}, expires: {trial_end_date}")
             
@@ -671,7 +677,6 @@ class UserService:
             logger.info(f"Domain event published: {event.__class__.__name__}")
         except Exception as e:
             logger.error(f"Failed to publish event: {e}")
-
 
 # =============================================================================
 # DEPENDENCY INJECTION HELPERS

@@ -363,7 +363,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
             
             # Server identification
-            "Server": f"PlantCareAPI/{self.settings.app_version}",
+            "Server": f"PlantCareAPI/{self.settings.APP_VERSION}",
         }
         
         # Add headers to response

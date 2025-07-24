@@ -451,6 +451,7 @@ class EventPublisher:
         logger.info("Event publisher initialized")
     
     async def publish(self, 
+                    event_name,
                      event: DomainEvent,
                      config: Optional[EventDeliveryConfig] = None,
                      correlation_id: Optional[str] = None,
@@ -469,7 +470,7 @@ class EventPublisher:
         """
         # Generate event ID
         event_id = str(uuid.uuid4())
-        
+
         # Use provided config or default
         delivery_config = config or self.default_config
         
@@ -477,8 +478,8 @@ class EventPublisher:
         published_event = PublishedEvent(
             event_id=event_id,
             event_type=type(event).__name__,
-            event_data=event.to_dict(),
-            metadata=event.metadata,
+            event_data=event,
+            metadata=event.metadata if hasattr(event, 'metadata') else EventMetadata(),
             config=delivery_config,
             correlation_id=correlation_id,
             causation_id=causation_id
@@ -1044,7 +1045,6 @@ class EventStreamPublisher(EventPublisher):
         """
         # Call parent publish method
         event_id = await super().publish(event, **kwargs)
-        
         # Add to event stream
         stream_event = {
             'event_id': event_id,

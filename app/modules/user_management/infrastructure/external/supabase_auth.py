@@ -32,6 +32,7 @@ for the Plant Care application while maintaining compatibility with the domain a
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
+from uuid import UUID
 
 from supabase import Client
 from gotrue import User, Session
@@ -45,7 +46,6 @@ from app.shared.core.exceptions import (
 )
 
 logger = logging.getLogger(__name__)
-
 
 class SupabaseAuthService:
     """
@@ -326,6 +326,56 @@ class SupabaseAuthService:
                 'role_based_access'
             ]
         }
+    
+    async def sync_user_with_supabase(
+        self,
+        user_id: UUID,
+        user_data: Dict[str, Any]
+    ) -> bool:
+        """
+        Sync user data with Supabase authentication.
+        
+        Args:
+            user_id: User identifier
+            user_data: User data to sync
+            
+        Returns:
+            bool: True if sync successful, False otherwise
+            
+        Raises:
+            AuthenticationError: If sync fails
+        """
+        try:
+            # Get user metadata for Supabase
+            sync_data = {
+                "user_metadata": {
+                    "user_id": str(user_id),
+                    "email": user_data.get("email"),
+                    "password":user_data.get("password"),
+                    "display_name": user_data.get("display_name"),
+                    "profile_photo": user_data.get("profile_photo"),
+                    "subscription_tier": user_data.get("subscription_tier", "free"),
+                    "email_verified": user_data.get("email_verified", False),
+                    "updated_at": datetime.utcnow().isoformat()
+                }
+            }
+
+            # Update user in Supabase
+            response = await self.client.auth.update_user_by_id(
+                user_id=str(user_id),
+                update_data=sync_data
+            )
+
+            if response and not hasattr(response, 'error'):
+                logging.info(f"Successfully synced user {user_id} with Supabase")
+                return True
+            else:
+                logging.error(f"Failed to sync user {user_id} with Supabase: {getattr(response, 'error', 'Unknown error')}")
+                return False
+
+        except Exception as e:
+            logging.error(f"Error syncing user {user_id} with Supabase: {str(e)}")
+            raise AuthenticationError(f"Failed to sync user with Supabase: {e}")
 
 
 # Global service instance
@@ -346,7 +396,6 @@ def get_supabase_auth_service() -> SupabaseAuthService:
         logger.debug("Created SupabaseAuthService instance")
     
     return _supabase_auth_service
-
 
 # Export the service class and factory function
 __all__ = [

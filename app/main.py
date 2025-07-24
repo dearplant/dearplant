@@ -51,7 +51,9 @@ from app.modules.user_management.infrastructure.database.user_repository_impl im
 from app.modules.user_management.domain.repositories.profile_repository import ProfileRepository
 # (Assuming you have a similar implementation file for the profile repository)
 from app.modules.user_management.infrastructure.database.profile_repository_impl import ProfileRepositoryImpl
-from app.modules.user_management.infrastructure.database.subscription_repository_impl import SubscriptionRepository
+
+from app.modules.user_management.domain.repositories.subscription_repository import SubscriptionRepository
+from app.modules.user_management.infrastructure.database.subscription_repository_impl import SubscriptionRepositoryImpl
 
 from datetime import datetime
 from fastapi.routing import APIRoute
@@ -219,7 +221,7 @@ def create_application() -> FastAPI:
     # give it an instance of UserRepositoryImpl."
     app.dependency_overrides[UserRepository] = UserRepositoryImpl
     app.dependency_overrides[ProfileRepository] = ProfileRepositoryImpl # Add this for profiles too
-    app.dependency_overrides[SubscriptionRepository] = SubscriptionRepository # Add this for profiles too
+    app.dependency_overrides[SubscriptionRepository] = SubscriptionRepositoryImpl # Add this for profiles too
 
 
     # =========================================================================

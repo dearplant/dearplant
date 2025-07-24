@@ -11,7 +11,12 @@ from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 from postgrest import APIError
 
+from typing import Dict, Any
+from app.shared.core.exceptions import AuthenticationError
+
+logger = logging.getLogger(__name__)
 from .settings import get_settings
+
 
 logger = logging.getLogger(__name__)
 
@@ -41,16 +46,15 @@ class SupabaseManager:
             client_options = ClientOptions(
                 schema="public",
                 headers={
-                    "User-Agent": f"PlantCareApp/{self.settings.app_version}",
+                    "User-Agent": f"PlantCareApp/{self.settings.APP_VERSION}",
                 },
                 auto_refresh_token=True,
                 persist_session=True,
-                detect_session_in_url=False,
             )
             
             client = create_client(
-                supabase_url=self.settings.supabase_url,
-                supabase_key=self.settings.supabase_anon_key,
+                supabase_url=self.settings.SUPABASE_URL,
+                supabase_key=self.settings.SUPABASE_ANON_KEY,
                 options=client_options
             )
             
@@ -257,7 +261,6 @@ class SupabaseManager:
             self._storage_client = None
             logger.info("Supabase client connections closed")
 
-
 # Global Supabase manager instance
 _supabase_manager: Optional[SupabaseManager] = None
 
@@ -320,3 +323,4 @@ async def cleanup_supabase():
         _supabase_manager.close()
         _supabase_manager = None
         logger.info("Supabase cleanup completed")
+
